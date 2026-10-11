@@ -51,6 +51,26 @@ def normalize_codex(data):
     return result
 
 
+def normalize_codexbar(entry):
+    """One provider entry of CodexBar's usage JSON (`codexbar usage --format json`, `serve` GET /usage).
+    Only the primary and secondary slots: tertiary and extra windows are model-scoped and would
+    overwrite the weekly reading if they shared its label."""
+    result = []
+    usage = entry.get("usage")
+    for key in ("primary", "secondary"):
+        value = usage.get(key) if isinstance(usage, dict) else None
+        if not isinstance(value, dict):
+            continue
+        duration = value.get("windowMinutes")
+        if not isinstance(duration, int) or isinstance(duration, bool) or duration <= 0:
+            duration = None
+        label = {300: "5H", 10080: "WEEK"}.get(duration, "WINDOW")
+        item = window(label, value.get("usedPercent"), value.get("resetsAt"), duration)
+        if item:
+            result.append(item)
+    return result
+
+
 def normalize_grok(data):
     config = data.get("config") or {}
     percent = config.get("creditUsagePercent")

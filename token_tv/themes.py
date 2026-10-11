@@ -212,7 +212,8 @@ def prompt_cloud_mark(size, color):
     draw = ImageDraw.Draw(image)
     for box in ((s * .02, s * .30, s * .56, s * .92), (s * .20, s * .06, s * .82, s * .66), (s * .44, s * .30, s * .98, s * .92)):
         draw.ellipse(box, fill=color)
-    draw.rounded_rectangle((s * .14, s * .50, s * .86, s * .92), radius=s * .2, fill=color)
+    box = tuple(round(s * v) for v in (.14, .50, .86, .92))
+    draw.rounded_rectangle(box, radius=min(round(s * .2), (box[3] - box[1]) // 2), fill=color)
     cut = Image.new('L', (s, s), 0)
     cd = ImageDraw.Draw(cut)
     w, cx, cy = round(s * .09), s * .27, s * .52
@@ -501,4 +502,39 @@ def render_hud(snapshot):
     return cv.finish(blur=2)
 
 
-RENDERERS = {'digital': render_digital, 'neon': render_neon, 'retro': render_retro, 'hud': render_hud}
+GB_DARKEST, GB_DARK, GB_LIGHT, GB_LIGHTEST = '#0f380f', '#306230', '#8bac0f', '#9bbc0f'
+GB_PALETTE = [GB_DARKEST, GB_DARK, GB_LIGHT, GB_LIGHTEST]
+
+
+def to_four_shades(image):
+    """Snap every pixel to the nearest of the four LCD shades (the real Game Boy had only four)."""
+    palette = Image.new('P', (1, 1))
+    flat = [int(c[i:i + 2], 16) for c in GB_PALETTE for i in (1, 3, 5)]
+    palette.putpalette(flat + [0] * (768 - len(flat)))
+    return image.convert('RGB').quantize(palette=palette, dither=Image.Dither.NONE).convert('RGB')
+
+
+def render_gameboy(data):
+    cv = Canvas(GB_LIGHTEST)
+    pixel = lambda size: face('press-start-2p.ttf', size)
+    rows = overview_rows(data)
+    pitch = 79
+    for index, row in enumerate(rows):
+        y = 3 + index * pitch + row_shift(len(rows), pitch)
+        used, period, old, reset = reading(row)  # used is None when nothing was reported
+        cv.draw.rectangle((4, y, 235, y + 74), outline=GB_DARKEST, width=2)
+        cv.draw.rectangle((7, y + 3, 232, y + 71), outline=GB_DARK, width=1)
+        place_bot(cv.ink, bot_sprite(row['provider'], 22, 18, GB_DARKEST, GB_LIGHTEST), (11, y + 7, 22, 18))
+        cv.text((38, y + 11), account_label(row), pixel(8), GB_DARKEST)
+        cv.text((229, y + 11), ('OLD ' if old else '') + period, pixel(8), GB_DARK, anchor='ra')
+        cv.text((12, y + 31), number_text(used), pixel(20), GB_DARKEST)  # a dash, never a fake 0
+        if used is not None:
+            cv.text((12 + cv.draw.textlength(number_text(used), font=pixel(20)) + 2, y + 39), '%', pixel(10), GB_DARKEST)
+        cv.text((229, y + 34), 'RESET', pixel(7), GB_DARK, anchor='ra')
+        cv.text((229, y + 45), reset, pixel(8), GB_DARKEST, anchor='ra')
+        gauge(cv, (12, y + 58, 227, y + 66), used, (GB_DARKEST, GB_DARK), gap=2, track=GB_LIGHT, empty=GB_DARK, stale=old)
+    return to_four_shades(cv.finish())
+
+
+
+RENDERERS = {'digital': render_digital, 'neon': render_neon, 'retro': render_retro, 'hud': render_hud, 'gameboy': render_gameboy}

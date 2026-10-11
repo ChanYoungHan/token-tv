@@ -156,8 +156,29 @@ def doctor(args):
         return 1
     flag = '' if str(Path(args.config).expanduser()) == default_config() else f' --config {args.config}'
     ready = True
+    unreported = []
     for account in config['accounts']:
         provider = account['provider']
+        if account.get('codexbar_command') or account.get('codexbar_url'):
+            # CodexBar owns this login; TokenTV only checks that it answers.
+            command = account.get('codexbar_command')
+            line = f'{account["alias"]:<10} {provider:<6} CodexBar '
+            if args.live:
+                from token_tv.sources import fetch_account
+                row = fetch_account(account)
+                good = row['status'] in ('ok', 'quota_unavailable')
+                line += f'live check {"ok" if good else row["status"].upper()}'
+                if good and not row.get('identity_verified'):
+                    line += ' (CodexBar reported no email)'
+                    unreported.append(account['alias'])
+                ready &= good
+            elif command and not shutil.which(os.path.expanduser(command)):
+                ready = False
+                line += f'MISSING: {command} not found -> install the CodexBar CLI'
+            else:
+                line += f'{command or account["codexbar_url"]} (not checked yet)'
+            print(line)
+            continue
         home = account.get('source_home') or PROVIDERS[provider][1]
         found, state = cli_path(provider), login_state(provider, home)
         line = f'{account["alias"]:<10} {provider:<6} CLI {"ok" if found else "MISSING"}  '
@@ -184,6 +205,9 @@ def doctor(args):
     print('Clock: ' + (config.get('device_url') or 'none (dashboard only)'))
     if not ready:
         print(f'Fix the lines above, then run token-tv doctor{flag} again.')
+    elif args.live and unreported:
+        print(f'Ready, but CodexBar did not report the email for {", ".join(unreported)}; '
+              f'check it reads the account you expect. Start with: token-tv run{flag}')
     elif args.live:
         print(f'Ready: every account answered with the expected email. Start with: token-tv run{flag}')
     else:

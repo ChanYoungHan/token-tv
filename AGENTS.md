@@ -1,6 +1,6 @@
 # Agent guide
 
-TokenTV draws AI usage limits on a 240×240 desk clock. Python 3.10+, Pillow, no other runtime deps.
+TokenTV puts Claude and Codex usage limits on a ~$5 AliExpress Wi-Fi desk clock (240×240, SmallTV-style) by uploading pictures to its stock photo album, so the clock keeps its firmware. A computer that stays on reads usage and draws the pictures. Python 3.10+, Pillow, no other runtime deps.
 
 ## Run without accounts or a clock
 
@@ -45,4 +45,4 @@ Verified on Linux with one SD_PRO clock. Mac and Windows hosts are untested; rep
 
 Follow `docs/clock-faces.md`: write a render function, add it to `RENDERERS` and `STYLES`, render
 with `token-tv demo`, and look at the 240×240 result at real size. It then appears in the dashboard's
-Themes list as a Local face and can be applied to the clock without any upstream change.
+Gallery as a Local face and can be applied to the clock without any upstream change.

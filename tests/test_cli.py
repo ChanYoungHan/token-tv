@@ -82,6 +82,25 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('Keychain unchecked', out)
 
+    def test_doctor_checks_codexbar_instead_of_a_login_file(self):
+        self.config.write_text(json.dumps({'accounts': [
+            {'key': 'claude_a', 'alias': 'CLAUDE A', 'provider': 'claude', 'email': 'a@example.com',
+             'codexbar_command': str(self.tmp / 'missing-codexbar'), 'codexbar_source': 'oauth'}]}))
+        code, out, _ = run('doctor', '--config', str(self.config))
+        self.assertEqual(code, 1)
+        self.assertIn('install the CodexBar CLI', out)
+        self.assertNotIn('token-tv connect', out)
+        unreported = {'status': 'ok', 'identity_verified': False}
+        with mock.patch('token_tv.sources.fetch_account', return_value=unreported):
+            code, out, _ = run('doctor', '--config', str(self.config), '--live')
+        self.assertEqual(code, 0)
+        self.assertIn('CodexBar did not report the email for CLAUDE A', out)
+        failed = {'status': 'error', 'identity_verified': False}
+        with mock.patch('token_tv.sources.fetch_account', return_value=failed):
+            code, out, _ = run('doctor', '--config', str(self.config), '--live')
+        self.assertEqual(code, 1)
+        self.assertIn('live check ERROR', out)
+
     def test_broken_config_gets_a_sentence_not_a_traceback(self):
         self.config.write_text('{"accounts": [')
         for command in ('doctor', 'run'):

@@ -133,9 +133,9 @@ class CatalogTest(unittest.TestCase):
     def test_bundled_catalog_matches_installed_faces(self):
         data = catalog.validate_catalog(json.loads(catalog.CATALOG_PATH.read_text()))
         self.assertLessEqual({t['id'] for t in data['themes']}, set(STYLES))  # a fork may add Local faces
-        # one public theme issue per built-in face (issues #1-#6 in the public repository)
+        # Existing public issues stay mapped; new faces have no voting issue yet.
         self.assertEqual({t['id']: t['like_issue'] for t in data['themes']},
-                         {'pixel': 1, 'digital': 2, 'neon': 3, 'retro': 4, 'hud': 5, 'space': 6})
+                         {'pixel': 1, 'digital': 2, 'neon': 3, 'retro': 4, 'hud': 5, 'space': 6, 'gameboy': None})
         votes = catalog.load_votes()
         self.assertTrue(set(votes['counts']) <= {str(t['like_issue']) for t in data['themes']})
         self.assertTrue(all(v['fetched_at'] for v in votes['counts'].values()))  # every count is dated

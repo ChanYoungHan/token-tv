@@ -2,7 +2,8 @@
 
 **Request:** «게임보이 스타일로 시계 화면 바꿔줘» ("change the clock face to a Game Boy style")
 **Made by:** the TokenTV author with Claude Code (CC). Sample data only, not a real account.
-This is a separate example. It is **not** registered as a product theme and was not applied to any clock.
+Game Boy is also a built-in clock face: open **Gallery → Game Boy → Apply to clock**.
+This standalone example remains editable for experimenting with your own four-colour palette.
 
 | before (built-in Pixel) | after (Game Boy) | after, old + unknown |
 | --- | --- | --- |

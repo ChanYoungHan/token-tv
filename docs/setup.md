@@ -73,6 +73,9 @@ never a password, token or cookie. Polling runs every five minutes; old readings
 missing data shows a dash, never a fake 0%. Claude accounts with `refresh_with_cli: true` may
 refresh an expired login through the CLI, which sends one tiny prompt.
 
+Already use [CodexBar](https://github.com/steipete/CodexBar)? A Claude or Codex account can read
+CodexBar's usage JSON instead: see [docs/codexbar.md](codexbar.md).
+
 **5-hour or weekly?** Both windows are read. The clock shows whichever is more used, with that
 window's reset time. The web dashboard shows the same window first; open the other windows
 under it to see the rest.

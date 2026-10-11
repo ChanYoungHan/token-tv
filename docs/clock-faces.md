@@ -104,3 +104,8 @@ It is not a live ranking. Older installs show "update TokenTV" instead of downlo
 ## Worked example
 
 [Pixel → Game Boy](../examples/gameboy/README.md) includes the render function, the same sample data before and after, and an old/missing-data check. It was made with Claude Code and runs without a clock or account.
+
+## Game Boy LCD face
+
+**Game Boy** uses four green LCD shades and ten-cell gauges.
+Choose it under **Gallery → Game Boy → Apply to clock**. OLD and missing readings remain explicit.
