@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from token_tv.device import FILES, open_display
+from token_tv.device import FILES, BackupMismatch, open_display
 from token_tv.catalog import payload as theme_payload
 from token_tv.display import STYLES, render_page
 from token_tv.web_assets import HTML, ASSETS, asset
@@ -24,6 +24,23 @@ def write_json(path, data):
     temporary.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     os.chmod(temporary, 0o600)
     temporary.replace(path)
+
+
+def load_original(device, backup_path):
+    """Return the clock's original state; save it first only if no backup exists yet."""
+    if backup_path.is_file():
+        original = json.loads(backup_path.read_text())
+        device.check_backup(original)  # a backup from another kind of clock is kept and nothing is sent
+        return original
+    original = device.capture()
+    write_json(backup_path, original)
+    return original
+
+
+def mismatch_message(error, backup_path):
+    return (f"{error} Nothing was changed on the clock and {backup_path} was kept. If the clock was offline "
+            "when TokenTV started, start TokenTV again. If you replaced the clock, put the old one back to "
+            "restore it, or move that file away so TokenTV saves a new backup.")
 
 
 class DisplayPreferences:
@@ -155,7 +172,12 @@ def main():
     if args.restore_display:
         if not device or not backup_path.is_file():
             parser.error("A display and its original state backup are required")
-        device.restore(json.loads(backup_path.read_text()))
+        original = json.loads(backup_path.read_text())
+        try:
+            device.check_backup(original)
+        except BackupMismatch as error:
+            raise SystemExit(mismatch_message(error, backup_path))
+        device.restore(original)
         print("Original display selection restored.")
         return
     store = UsageStore(config["accounts"])
@@ -177,9 +199,7 @@ def main():
             phase = "backup"
             try:
                 if original is None:
-                    original = json.loads(backup_path.read_text()) if backup_path.is_file() else device.capture()
-                    if not backup_path.is_file():
-                        write_json(backup_path, original)
+                    original = load_original(device, backup_path)
                 phase = "upload"
                 image = render_page(snapshot, 0, style)
                 name = FILES[1] if image[:4] == b"GIF8" else FILES[0]
@@ -195,6 +215,8 @@ def main():
                 write_json(state_dir / "display-receipt.json", {"at": int(time.time()), "style": style, "uploads": receipts})
                 preferences.delivered(style, True)
             except (OSError, ValueError, KeyError) as error:
+                if isinstance(error, BackupMismatch):
+                    print(mismatch_message(error, backup_path), flush=True)
                 write_json(state_dir / "display-receipt.json", {"at": int(time.time()), "style": style, "status": "error", "phase": phase,
                            "uploads": receipts, "http_status": getattr(error, "code", None)})
                 preferences.delivered(style, False)

@@ -1,6 +1,7 @@
 """Confirmed SD_PRO photo API, plus the SmallTV-Ultra image API. Never flash or delete existing photographs."""
 import json
 import uuid
+from http.client import HTTPException
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
@@ -9,9 +10,16 @@ FILES = ("tokentv.jpg", "tokentv.gif")
 # The album page accepts GIFs up to 240×240; keep both well under the free space.
 LIMITS = {"tokentv.jpg": (60000, "image/jpeg"), "tokentv.gif": (400000, "image/gif")}
 LEGACY_FILES = ("tokentv-c.jpg", "tokentv-m.jpg")
+MODEL_NAMES = {"sdpro": "an SD_PRO", "ultra": "a SmallTV-Ultra"}
+
+
+class BackupMismatch(ValueError):
+    """The saved original state belongs to a different kind of clock."""
 
 
 class PhotoDisplay:
+    MODEL = "sdpro"
+
     def __init__(self, base_url):
         parsed = urlparse(base_url)
         if parsed.scheme != "http" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.path not in ("", "/"):
@@ -22,6 +30,13 @@ class PhotoDisplay:
         with urlopen(Request(self.base_url + path, data=data, headers=headers or {}), timeout=20) as response:
             body = response.read()
             return response.status, body
+
+    def check_backup(self, original):
+        # SD_PRO backups predate the model key, so a missing key means SD_PRO.
+        saved = original.get("model", "sdpro") if isinstance(original, dict) else None
+        if saved != self.MODEL:
+            raise BackupMismatch(f"The saved display backup is for {MODEL_NAMES.get(saved, 'an unknown')} clock, "
+                                 f"but this clock was detected as {MODEL_NAMES[self.MODEL]}.")
 
     def capture(self):
         _, raw = self.request("/theme/list")
@@ -83,6 +98,7 @@ class PhotoDisplay:
 
 class UltraDisplay(PhotoDisplay):
     """SmallTV-Ultra (Ultra-V9) image API, read from the clock's own image.html and settings.html."""
+    MODEL = "ultra"
     PHOTO_THEME = 3
 
     def capture(self):
@@ -90,7 +106,7 @@ class UltraDisplay(PhotoDisplay):
         theme = json.loads(raw)["theme"]
         _, raw = self.request("/album.json")
         album = json.loads(raw)
-        return {"model": "ultra", "theme": theme, "autoplay": album["autoplay"], "i_i": album["i_i"]}
+        return {"model": self.MODEL, "theme": theme, "autoplay": album["autoplay"], "i_i": album["i_i"]}
 
     def upload(self, name, image):
         limit, mime = LIMITS.get(name, (0, ""))
@@ -104,15 +120,17 @@ class UltraDisplay(PhotoDisplay):
         return {"file": name, "status": status, "bytes": len(image)}
 
     def activate(self, original, name=FILES[0]):
-        # Stop the slideshow so the user's own photos never rotate in, show ours, select the album theme.
+        # Stop the slideshow so the user's own photos never rotate in, select the album theme, show ours.
+        # The image is chosen after the theme, as geekmagic-hacs does on the same firmware.
         current = self.capture()
         if current["autoplay"]:
-            self.request(f"/set?i_i={current['i_i']}&autoplay=0")
-        self.request("/set?img=" + quote("/image/" + name, safe=""))
+            self.request(f"/set?i_i={int(current['i_i'])}&autoplay=0")
         if current["theme"] != self.PHOTO_THEME:
             self.request(f"/set?theme={self.PHOTO_THEME}")
+        self.request("/set?img=" + quote("/image/" + name, safe=""))
 
     def restore(self, original):
+        # There is no known way to read the previously shown image, so only the album settings and theme return.
         self.request(f"/set?i_i={int(original['i_i'])}&autoplay={int(original['autoplay'])}")
         self.request(f"/set?theme={int(original['theme'])}")
 
@@ -121,8 +139,7 @@ def open_display(base_url):
     display = PhotoDisplay(base_url)
     try:
         _, raw = display.request("/v.json")
-        if "Ultra" in json.loads(raw).get("m", ""):
-            return UltraDisplay(base_url)
-    except (OSError, ValueError, AttributeError):
-        pass  # ponytail: model checked once at start; an Ultra offline at launch falls back to SD_PRO until restart
-    return display
+        model = json.loads(raw).get("m")
+    except (OSError, ValueError, AttributeError, HTTPException):
+        return display  # model checked once at start; an Ultra offline at launch falls back to SD_PRO until restart
+    return UltraDisplay(base_url) if isinstance(model, str) and model.startswith("SmallTV-Ultra") else display
