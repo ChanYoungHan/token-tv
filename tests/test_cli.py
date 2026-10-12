@@ -243,6 +243,29 @@ class StartTest(unittest.TestCase):
         detect.assert_not_called()
         run.assert_called_once()
 
+    def saved_config(self, device_url):
+        config = {'device_url': device_url, 'accounts': [{'key': 'codex_a', 'alias': 'CODEX A', 'provider': 'codex',
+                                                          'email': 'b@example.com', 'source_home': '~/.codex'}]}
+        self.config.write_text(json.dumps(config))
+        return config
+
+    def test_new_clock_address_with_existing_config_stops_and_says_where(self):
+        # Reported in #7: the clock's IP changed and --device-url was silently ignored.
+        saved = self.saved_config('http://192.168.0.50')
+        code, _, err, _, run = self.start('--device-url', '192.168.0.77')
+        self.assertEqual(code, 1)
+        self.assertIn('http://192.168.0.50', err)
+        self.assertIn('http://192.168.0.77', err)
+        self.assertIn(str(self.config), err)
+        self.assertEqual(json.loads(self.config.read_text()), saved)
+        run.assert_not_called()
+
+    def test_same_clock_address_with_existing_config_runs(self):
+        self.saved_config('http://192.168.0.50')
+        code, _, err, _, run = self.start('--device-url', '192.168.0.50')
+        self.assertEqual((code, err), (0, ''))
+        run.assert_called_once()
+
     def test_nothing_signed_in_explains_next_step(self):
         from token_tv import live
         with mock.patch.object(cli, 'cli_path', return_value=None), mock.patch.object(live, 'main') as run:

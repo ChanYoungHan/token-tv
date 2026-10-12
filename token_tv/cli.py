@@ -279,8 +279,22 @@ def start(args):
             json.dump(config, handle, indent=2)
             handle.write('\n')
         print(f'Saved {path} (emails and paths only, no secrets).')
-    if read_config(path) is None:
+    config = read_config(path)
+    if config is None:
         return 1
+    if args.device_url and path.exists():
+        # --device-url only fills a new config; say so rather than quietly using the saved clock.
+        wanted = args.device_url if args.device_url.startswith(('http://', 'https://')) else 'http://' + args.device_url
+        try:
+            wanted = device_address(wanted)
+        except ValueError as error:
+            print(error, file=sys.stderr)
+            return 1
+        if wanted != config.get('device_url'):
+            print(f'{path} already sets the clock to {config.get("device_url") or "none (dashboard only)"}, '
+                  f'and --device-url is only used when that file is created.\n'
+                  f'To use {wanted}, change device_url in that file, then run token-tv start again.', file=sys.stderr)
+            return 1
     if not args.no_browser:
         import threading
         import webbrowser
