@@ -12,7 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from token_tv.display import (
-    PROVIDER_INK, STATUS, account_label, mascot, overview_rows, primary_window, quota_period, row_shift, time_left,
+    PROVIDER_INK, account_label, mascot, overview_rows, reading, row_shift,
 )
 
 WEB = Path(__file__).with_name('web')
@@ -61,15 +61,6 @@ def mix(a, b, t):
 
 def band(theme, used):
     return BANDS[theme][0 if used < 50 else 1 if used < 80 else 2 if used < 90 else 3]
-
-
-def reading(row):
-    value = primary_window(row)
-    used = max(0, min(100, value['used_percent'])) if value else None
-    period = quota_period(value) if value else STATUS.get(row['status'], 'NO DATA')
-    old = bool(value) and row['status'] != 'ok'
-    reset = time_left(value.get('resets_at')) if value else '--'
-    return used, period, old, reset
 
 
 def ghost(text):

@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from token_tv.device import FILES, BackupMismatch, open_display
 from token_tv.catalog import payload as theme_payload
-from token_tv.display import STYLES, render_page
+from token_tv.display import STYLES, render_page, watch_payload
 from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
@@ -108,6 +108,8 @@ def handler(store, preferences=None):
                 body = json.dumps(theme_payload()).encode()
             elif path == '/display':
                 body = json.dumps(display).encode()
+            elif path == "/watch.json":
+                body = json.dumps(watch_payload(snapshot), ensure_ascii=False, separators=(",", ":")).encode()
             elif path == "/health":
                 body = json.dumps({"status": "ok", "updated_at": snapshot["updated_at"]}).encode()
             else:

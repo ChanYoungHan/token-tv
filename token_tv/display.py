@@ -134,6 +134,40 @@ def quota_period(value):
     return {'WEEK': 'WK', 'BUDGET': 'BUD'}.get(value['label'], value['label'])
 
 
+def reading(row):
+    """(used %, window label, old?, time left) for one account; used is None when nothing was reported."""
+    value = primary_window(row)
+    used = max(0, min(100, value['used_percent'])) if value else None
+    period = quota_period(value) if value else STATUS.get(row['status'], 'NO DATA')
+    old = bool(value) and row['status'] != 'ok'
+    reset = time_left(value.get('resets_at')) if value else '--'
+    return used, period, old, reset
+
+
+def watch_payload(snapshot):
+    """Flat JSON for Apple Watch complication apps that read one value by path, e.g. accounts.claude_a.used_percent.
+
+    Accounts are keyed by the label the clock shows (CLAUDE A -> claude_a), not by config keys, which can say
+    whose account it is."""
+    accounts, parts = {}, []
+    for row in snapshot['accounts'].values():
+        key = base = account_label(row).lower().replace(' ', '_')
+        number = 1
+        while key in accounts:
+            number += 1
+            key = f'{base}_{number}'
+        used, period, old, reset = reading(row)
+        used = None if used is None else round(used)
+        value = primary_window(row)
+        text = period if used is None else f'{used}% {period}' + (' OLD' if old else '')
+        accounts[key] = {'label': account_label(row), 'used_percent': used,
+                         'used': None if used is None else used / 100, 'window': None if used is None else period,
+                         'resets_in': reset, 'resets_at': round(value['resets_at']) if value and value.get('resets_at') else None,
+                         'text': text, 'state': 'missing' if used is None else 'old' if old else 'ok'}
+        parts.append(f'{account_label(row)} {text}')
+    return {'updated_at': snapshot['updated_at'], 'summary': ' · '.join(parts) or 'NO ACCOUNTS', 'accounts': accounts}
+
+
 # A code-native 5×7 alphabet keeps LCD text on a visible pixel grid.
 PIXEL_GLYPHS = {
     'A': '01110/10001/10001/11111/10001/10001/10001',
