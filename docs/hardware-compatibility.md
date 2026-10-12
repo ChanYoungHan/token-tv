@@ -8,14 +8,21 @@ not "probably fine".
 | Clock | Firmware web UI | What TokenTV uses | Checked |
 | --- | --- | --- | --- |
 | The author's 240×240 GeekMagic SmallTV-style Wi-Fi clock (receipt: ₩5,650 on a Korean AliExpress discount; prices vary by region) | Stock firmware with the **SD_PRO** web UI and a photo album | `/theme/list`, `/photo/list`, `/photo/upload`, photo theme id `2` | One unit, Linux host |
+| GeekMagic **SmallTV-Ultra** | Stock firmware `Ultra-V9.0.54` (`/v.json` reports `SmallTV-Ultra`) | `/app.json`, `/album.json`, `/doUpload?dir=/image/`, `/set?img=`, Photo Album theme `3` | The contributor's unit ([#7](https://github.com/click6067-ship-it/token-tv/pull/7)). The author has no Ultra and has not checked it on a real clock |
 
 TokenTV never flashes firmware and never deletes your photos. It uploads one picture, switches the
 clock to its photo theme, and `token-tv run --restore-display` puts the original theme back.
+
+On the SmallTV-Ultra, TokenTV also turns the album's autoplay off while it is showing. Restoring puts
+the theme and autoplay back, but there is no known way to read which photo was selected before, so
+TokenTV's picture can stay in the album. Delete `tokentv.jpg` / `tokentv.gif` on the clock's image page
+if you want them gone.
 
 ## Not verified
 
 - Other GeekMagic models, SmallTV Pro, and clones that look the same. A similar case is not evidence
   of the same firmware.
+- SmallTV-Ultra on firmware other than `Ultra-V9.0.54`, and animated (GIF) faces on the Ultra.
 - Firmware without the photo album page or with different photo API paths.
 - macOS and Windows hosts.
 
