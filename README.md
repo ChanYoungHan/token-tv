@@ -8,6 +8,6 @@ Your Claude and Codex usage limits on a ~$5 Wi-Fi desk clock. No firmware flashi
 **Set it up:** give this repo to your AI and say *"Set up TokenTV for me."* It follows [AGENTS.md](AGENTS.md).  
 **Make your own face:** no clock needed, start from the [Game Boy example](examples/gameboy) and ask your AI to change it. [Guide](docs/clock-faces.md) · [Share it](https://github.com/click6067-ship-it/token-tv/issues/new?template=share_a_face.md)  
 Details: [how it works](docs/stock-photo-display.md) · [setup](docs/setup.md) · [compatible clocks](docs/hardware-compatibility.md) · [CodexBar input](docs/codexbar.md) · [Apple Watch](docs/apple-watch.md) · MIT · [한국어](README.ko.md)  
-Featured on [Hackaday](https://hackaday.com/2026/10/06/smalltv-hacking-with-surprisingly-little-fuss/).
+Featured on [Hackaday](https://hackaday.com/2026/10/06/smalltv-hacking-with-surprisingly-little-fuss/) · Listed in [CodexBar](https://github.com/steipete/CodexBar#desk-display).
 
 <p align="center"><a href="examples/gameboy"><img src="examples/gameboy/comparison.png" width="640" alt="Change a face: original pixel style and a four-colour Game Boy example, rendered from the same sample readings"></a></p>
