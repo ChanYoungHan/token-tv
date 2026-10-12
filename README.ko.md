@@ -1,4 +1,10 @@
 <h1 align="center">TokenTV</h1>
+<p align="center">
+  <a href="https://github.com/click6067-ship-it/token-tv/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/click6067-ship-it/token-tv"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <a href="https://hackaday.com/2026/10/06/smalltv-hacking-with-surprisingly-little-fuss/"><img alt="Featured on Hackaday" src="https://img.shields.io/badge/featured%20on-Hackaday-1a1a1a"></a>
+  <a href="https://github.com/steipete/CodexBar#desk-display"><img alt="Listed in CodexBar" src="https://img.shields.io/badge/listed%20in-CodexBar-555555"></a>
+</p>
 
 <p align="center"><img src="docs/images/real-clock.jpg" alt="작은 책상 시계에 띄운 TokenTV"></p>
 <p align="center"><img src="docs/images/clock-faces.png" alt="시계 화면 6종(샘플 데이터)"></p>
@@ -7,7 +13,6 @@
 **구경하기:** [라이브 데모](https://token-tv.vercel.app) 또는 `npx github:click6067-ship-it/token-tv demo`, 시계·로그인 없이 바로.  
 **설치하기:** 이 저장소를 AI에게 주고 *"TokenTV 설정해줘"* 라고 하세요. AI는 [AGENTS.md](AGENTS.md)를 따릅니다.  
 **내 화면 만들기:** 시계 없이 [Game Boy 예제](examples/gameboy)에서 시작해 AI에게 바꿔 달라고 하세요. [가이드](docs/clock-faces.md) · [공유하기](https://github.com/click6067-ship-it/token-tv/issues/new?template=share_a_face.md)  
-자세히: [설정](docs/setup.ko.md) · [호환 시계](docs/hardware-compatibility.md) · [CodexBar 연동](docs/codexbar.md) · [애플워치](docs/apple-watch.md) · MIT · [English](README.md)  
-[Hackaday](https://hackaday.com/2026/10/06/smalltv-hacking-with-surprisingly-little-fuss/)에 소개됐고 [CodexBar 연동 목록](https://github.com/steipete/CodexBar#desk-display)에도 올라 있습니다.
+자세히: [설정](docs/setup.ko.md) · [호환 시계](docs/hardware-compatibility.md) · [CodexBar 연동](docs/codexbar.md) · [애플워치](docs/apple-watch.md) · [English](README.md)  
 
 <p align="center"><a href="examples/gameboy"><img src="examples/gameboy/comparison.png" width="640" alt="내 화면 만들기: 같은 샘플 사용량으로 그린 원래 픽셀 화면과 4색 Game Boy 예제"></a></p>
