@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "token-tv"
-version = "0.1.0"
+version = "0.2.0"
 description = "Your AI usage limits on a $5 desk clock: Claude, Codex and Grok on a 240x240 Wi-Fi clock"
 readme = "README.md"
 license = "MIT"
@@ -19,7 +19,8 @@ Demo = "https://token-tv.vercel.app"
 token-tv = "token_tv.cli:main"
 
 [tool.setuptools]
-packages = ["token_tv", "token_tv.providers"]
+packages = ["token_tv", "token_tv.providers", "token_tv.web", "token_tv.assets"]
 
 [tool.setuptools.package-data]
-token_tv = ["web/*", "assets/*.png", "assets/*.json"]
+"token_tv.web" = ["*"]
+"token_tv.assets" = ["*.png", "*.json"]

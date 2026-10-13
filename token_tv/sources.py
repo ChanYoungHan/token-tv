@@ -11,6 +11,8 @@ import threading
 import time
 import unicodedata
 from pathlib import Path
+
+from token_tv import __version__
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
@@ -232,7 +234,7 @@ def codex_payload(account):
     env = scoped_env("codex", Path(account["source_home"]).expanduser())
     rpc = RPC([exe("codex"), "app-server"], env)
     try:
-        rpc.call("initialize", {"clientInfo": {"name": "token_tv", "title": "TokenTV", "version": "0.1.0"}, "capabilities": {}})
+        rpc.call("initialize", {"clientInfo": {"name": "token_tv", "title": "TokenTV", "version": __version__}, "capabilities": {}})
         rpc.process.stdin.write('{"method":"initialized","params":{}}\n')
         rpc.process.stdin.flush()
         identity = rpc.call("account/read", {"refreshToken": True}).get("account") or {}
@@ -332,7 +334,7 @@ def logged_in_email(provider, home):
                 return None
             rpc = RPC([exe("codex"), "app-server"], scoped_env("codex", root))
             try:
-                rpc.call("initialize", {"clientInfo": {"name": "token_tv", "title": "TokenTV", "version": "0.1.0"},
+                rpc.call("initialize", {"clientInfo": {"name": "token_tv", "title": "TokenTV", "version": __version__},
                                         "capabilities": {}})
                 rpc.process.stdin.write('{"method":"initialized","params":{}}\n')
                 rpc.process.stdin.flush()
