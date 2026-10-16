@@ -715,3 +715,23 @@ h1{margin:0;font:600 48px/1.04 var(--font-display);letter-spacing:-.03em;color:v
 .theme-actions .control{min-height:28px;padding:4px 12px;font-size:12px}
 .theme-actions a{color:var(--ink-2)}.theme-update{color:var(--ink-3)}
 [data-demo] #apply{display:none}
+
+/* Browser reauthentication shares the dashboard theme and stays usable on a phone. */
+.account-connect{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0 18px;font:13px/1.5 var(--font-body);color:var(--ink-3)}
+.account-connect[data-needs-login=true]{color:var(--lvl-critical)}
+.account-connect .control{flex:none}
+.login-dialog{box-sizing:border-box;width:min(560px,calc(100% - 32px));max-height:calc(100dvh - 40px);overflow:auto;padding:28px;border:1px solid var(--line-2);border-radius:var(--radius-card);background:var(--panel);color:var(--ink);box-shadow:0 20px 100px #0009;font:15px/1.65 var(--font-body)}
+.login-dialog::backdrop{background:#000b;backdrop-filter:blur(5px)}
+.login-head{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.login-head h2{margin:0;font:600 23px/1.4 var(--font-body)}
+.login-dialog p{overflow-wrap:anywhere}
+.login-dialog label{display:block;margin:20px 0 8px}
+.login-dialog input{box-sizing:border-box;width:100%;min-width:0;font:16px/1.5 var(--font-body);padding:12px}
+.login-dialog .primary{display:inline-block;margin:8px 0;text-align:center;text-decoration:none}
+.login-dialog [hidden]{display:none!important}
+.login-code-row{display:flex;gap:8px;align-items:stretch}
+.login-code-row button{flex:none}
+#login-device-code{font:600 21px/1.5 monospace;letter-spacing:2px}
+.login-actions{display:flex;justify-content:flex-end;gap:12px;margin-top:24px}
+#login-status{padding:14px;background:var(--track);border-radius:var(--radius-control)}
+@media(max-width:540px){.account-connect{align-items:flex-start;flex-direction:column;gap:10px}.login-dialog{padding:20px}.login-code-row{flex-direction:column}}

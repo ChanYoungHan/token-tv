@@ -1,3 +1,5 @@
+> This fork includes Docker deployment and web account reauthentication. See the [Docker guide](docs/docker.ko.md) and [source/deployment separation](docs/deployment.ko.md).
+
 <h1 align="center">TokenTV</h1>
 <p align="center">
   <a href="https://github.com/click6067-ship-it/token-tv/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/click6067-ship-it/token-tv"></a>

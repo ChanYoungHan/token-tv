@@ -1,0 +1,14 @@
+# Only source files needed by the image enter the build context.
+**
+!pyproject.toml
+!README.md
+!LICENSE
+!token_tv/
+!token_tv/**
+!docker/
+!docker/entrypoint.sh
+**/auth.json
+**/.credentials.json
+**/config.json
+**/__pycache__/
+**/*.pyc

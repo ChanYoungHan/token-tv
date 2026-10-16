@@ -5,3 +5,11 @@ __pycache__/
 /.venv/
 *.egg-info/
 build/
+
+# Local account state belongs to official CLIs / the Docker volume.
+auth.json
+.credentials.json
+config.json
+.env
+.env.*
+!.env.example

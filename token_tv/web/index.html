@@ -8,6 +8,7 @@
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="/assets/style.css">
 <script src="/assets/app.js" defer></script>
+<script src="/assets/auth.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#providers">Skip to usage</a>
@@ -75,5 +76,27 @@
   </section>
   <details class="help"><summary>How to read this display</summary><p>Percentages show <strong>used quota</strong>. The main gauge shows the selected account’s highest reported window; other windows open below it. Timers belong to that same window. A previous value is marked OLD and is not a current reading.</p><p>Grok CLI budget is a billing limit, not the Grok web conversation limit. If a provider does not report quota, it stays unknown. Laptop-linked accounts need the laptop online.</p></details>
 </div>
+<dialog id="login-dialog" class="login-dialog" aria-labelledby="login-title">
+  <div class="login-head"><h2 id="login-title">계정 다시 연결</h2><button type="button" class="control" id="login-close" aria-label="로그인 창 닫기">닫기</button></div>
+  <p id="login-account" class="quiet"></p>
+  <p id="login-status" role="status" aria-live="polite">로그인 준비 중입니다.</p>
+  <p id="login-expires" class="quiet"></p>
+  <div id="login-browser" hidden>
+    <p>아래 버튼으로 공식 로그인 페이지를 열고, 표시된 계정으로 로그인하세요.</p>
+    <a id="login-link" class="control primary" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">공식 로그인 페이지 열기 ↗</a>
+  </div>
+  <div id="login-device" hidden>
+    <label for="login-device-code">공식 로그인 페이지에 입력할 기기 코드</label>
+    <div class="login-code-row"><input id="login-device-code" class="control" readonly autocomplete="off"><button type="button" class="control" id="login-copy">코드 복사</button></div>
+    <p class="quiet" id="login-copy-status">기기 코드를 공식 로그인 페이지에 입력하면 자동으로 완료됩니다.</p>
+  </div>
+  <form id="login-code-form" hidden>
+    <label for="login-code">Claude 로그인 화면에서 받은 인증 코드</label>
+    <input id="login-code" class="control" type="password" autocomplete="off" spellcheck="false" maxlength="2048" required>
+    <p class="quiet">코드 전체를 붙여 넣고 확인을 누르세요. 비밀번호는 공식 로그인 페이지에만 입력합니다.</p>
+    <button class="control primary" id="login-submit" type="submit">인증 코드 확인</button>
+  </form>
+  <div class="login-actions"><button type="button" class="control" id="login-cancel">로그인 취소</button><button type="button" class="control primary" id="login-retry" hidden>다시 시작</button></div>
+</dialog>
 </body>
 </html>

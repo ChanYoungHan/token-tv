@@ -186,7 +186,16 @@ function providerCard(provider, accounts) {
  if (checked) {const d = new Date(checked * 1000); when = el('time', d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}), 'stat-v'); when.dateTime = d.toISOString(); when.title = d.toLocaleString('en-GB')}
  const foot = el('div', undefined, 'card-foot');
  foot.append(stat('Account', a.alias || '—'), stat('Window', primary ? period(primary) : '—'), stat('Source', a.source === 'mini' ? 'This computer' : a.source === 'codexbar' ? 'CodexBar' : a.source ? 'Linked snapshot' : '—'), stat(stale ? 'Last good' : 'Checked', when), stat('Status', el('span', offline ? 'OFFLINE · Previous value' : STATUS[a.status] || 'Unknown', 'row-status stat-v'), 'stat-status'));
- card.append(foot); shell.append(card); return shell;
+ card.append(foot);
+ if (!DEMO && a.login_available) {
+  const connection = el('div', undefined, 'account-connect');
+  const authError = ['auth_required', 'identity_mismatch'].includes(a.status) || ['http_401', 'http_403', 'auth_required', 'identity_mismatch'].includes(a.error_code);
+  const reason = authError ? '인증이 만료되었거나 계정 확인이 필요합니다.' : '이 계정의 로그인을 다시 연결할 수 있습니다.';
+  connection.dataset.needsLogin = String(authError);
+  const button = el('button', '다시 로그인', 'control'); button.type = 'button'; button.dataset.loginAccount = a.key; button.onclick = () => openLogin(a.key);
+  connection.append(el('span', reason), button); card.append(connection);
+ }
+ shell.append(card); return shell;
 }
 function renderAccounts() {
  if (!snapshot) return;

@@ -18,9 +18,12 @@ class UsageStore:
                                "identity_verified": False, "source": "mini"}
                      for a in accounts}
 
-    def refresh(self):
-        with ThreadPoolExecutor(max_workers=min(4, len(self.accounts))) as executor:
-            rows = list(executor.map(self.fetch, self.accounts))
+    def refresh(self, skip_keys=()):
+        accounts = [a for a in self.accounts if a['key'] not in skip_keys]
+        rows = []
+        if accounts:
+            with ThreadPoolExecutor(max_workers=min(4, len(accounts))) as executor:
+                rows = list(executor.map(self.fetch, accounts))
         with self.lock:
             for row in rows:
                 previous = self.rows[row["key"]]
