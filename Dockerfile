@@ -1,10 +1,5 @@
 FROM node:22-bookworm-slim
 
-ARG VCS_REF=unknown
-LABEL org.opencontainers.image.source="https://github.com/ChanYoungHan/token-tv" \
-    org.opencontainers.image.revision="${VCS_REF}" \
-    org.opencontainers.image.licenses="MIT"
-
 ARG CLAUDE_VERSION=2.1.296
 ARG CODEX_VERSION=0.162.1
 
@@ -42,3 +37,9 @@ CMD ["token-tv", "run", "--host", "0.0.0.0"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3).read()"
+
+# Keep revision metadata after installation so code updates reuse dependency layers.
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.source="https://github.com/ChanYoungHan/token-tv" \
+    org.opencontainers.image.revision="${VCS_REF}" \
+    org.opencontainers.image.licenses="MIT"
