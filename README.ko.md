@@ -1,4 +1,4 @@
-> 이 포크는 Docker 실행과 웹 재로그인 기능을 포함합니다. [Docker 가이드](docs/docker.ko.md) · [소스·배포 저장소 분리](docs/deployment.ko.md)
+> 이 포크는 Docker 실행과 웹 재로그인 기능을 포함합니다. [Docker 가이드](docs/docker.ko.md) · [일별 누적 기록](docs/usage-history.ko.md) · [소스·배포 저장소 분리](docs/deployment.ko.md)
 
 <h1 align="center">TokenTV</h1>
 <p align="center">

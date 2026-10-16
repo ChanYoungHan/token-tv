@@ -4,6 +4,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import sqlite3
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +18,7 @@ from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
 from token_tv.web_auth import LoginManager
+from token_tv.history import UsageHistory
 
 
 def write_json(path, data):
@@ -78,7 +80,7 @@ class DisplayPreferences:
             self.status = ('queued' if style != self.style else 'ok' if success else 'error')
 
 
-def handler(store, preferences=None, logins=None):
+def handler(store, preferences=None, logins=None, history=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             return
@@ -86,6 +88,28 @@ def handler(store, preferences=None, logins=None):
         def do_GET(self):
             url = urlparse(self.path)
             path = url.path
+            if path == '/history':
+                if history is None:
+                    self.reply(503, b'{"error":"history_unavailable"}')
+                    return
+                query = parse_qs(url.query, keep_blank_values=True)
+                if set(query) - {'account', 'start', 'end'} or any(len(v) != 1 for v in query.values()):
+                    self.reply(400, b'{"error":"invalid_history_query"}')
+                    return
+                try:
+                    data = history.query(key=query.get('account', [None])[0],
+                                         start=query.get('start', [None])[0], end=query.get('end', [None])[0])
+                except (ValueError, OverflowError):
+                    self.reply(400, b'{"error":"invalid_history_range"}')
+                    return
+                except KeyError:
+                    self.reply(404, b'{"error":"unknown_history_account"}')
+                    return
+                except (sqlite3.Error, OSError):
+                    self.reply(503, b'{"error":"history_unavailable"}')
+                    return
+                self.reply(200, json.dumps(data, ensure_ascii=False).encode())
+                return
             if path.startswith('/auth/'):
                 if not self.auth_origin():
                     return
@@ -266,6 +290,11 @@ def main():
     store = UsageStore(config["accounts"])
     preferences = DisplayPreferences(args.config, config)
     interval = max(60, int(config.get("poll_seconds", 300)))
+    try:
+        history = UsageHistory(state_dir / 'usage-history.sqlite3', config['accounts'], interval)
+    except (sqlite3.Error, OSError, ValueError):
+        history = None
+        print('TokenTV history unavailable; live readings remain enabled.', flush=True)
     stopping = threading.Event()
     refresh_requested = threading.Event()
 
@@ -283,6 +312,11 @@ def main():
         if refresh:
             store.refresh(skip_keys=logins.active_keys())
         snapshot = store.snapshot()
+        if refresh and history:
+            try:
+                history.record(snapshot)
+            except (sqlite3.Error, OSError):
+                print('TokenTV history write failed; live readings remain enabled.', flush=True)
         style = preferences.snapshot()['style']
         if not args.once and device:
             receipts = []
@@ -341,7 +375,7 @@ def main():
     thread = threading.Thread(target=poll, daemon=True)
     thread.start()
     try:
-        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, logins)) as server:
+        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, logins, history)) as server:
             print(f"TokenTV live listening at http://{args.host}:{args.port}", flush=True)
             server.serve_forever()
     except KeyboardInterrupt:
