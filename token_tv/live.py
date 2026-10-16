@@ -93,12 +93,13 @@ def handler(store, preferences=None, logins=None, history=None):
                     self.reply(503, b'{"error":"history_unavailable"}')
                     return
                 query = parse_qs(url.query, keep_blank_values=True)
-                if set(query) - {'account', 'start', 'end'} or any(len(v) != 1 for v in query.values()):
+                if set(query) - {'account', 'start', 'end', 'granularity'} or any(len(v) != 1 for v in query.values()):
                     self.reply(400, b'{"error":"invalid_history_query"}')
                     return
                 try:
                     data = history.query(key=query.get('account', [None])[0],
-                                         start=query.get('start', [None])[0], end=query.get('end', [None])[0])
+                                         start=query.get('start', [None])[0], end=query.get('end', [None])[0],
+                                         granularity=query.get('granularity', ['day'])[0])
                 except (ValueError, OverflowError):
                     self.reply(400, b'{"error":"invalid_history_range"}')
                     return

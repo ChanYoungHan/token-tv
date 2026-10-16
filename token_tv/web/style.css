@@ -813,3 +813,8 @@ h1{margin:0;font:600 48px/1.04 var(--font-display);letter-spacing:-.03em;color:v
 .history-tooltip-row{padding-top:4px;font-size:11px;text-align:left}
 .history-table-account{justify-content:flex-end;white-space:nowrap}
 @media(max-width:700px){.history-stats{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.history-stats .history-account-stat .history-account-metrics strong{font-size:18px}.history-all-accounts{font-size:10px}}
+.history-granularity{display:flex;gap:6px;margin:0 0 16px}
+.history-granularity .control{min-width:84px}
+.usage-history .history-granularity .control[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--bg);text-shadow:none}
+.history-dates input[type=datetime-local]{width:195px}
+@media(max-width:700px){.history-dates:has(input[type=datetime-local]){width:100%;align-items:end}.history-dates input[type=datetime-local]{width:100%;max-width:210px}.history-dates:has(input[type=datetime-local]) label{flex:1;min-width:120px}.history-dates:has(input[type=datetime-local])>span{padding-bottom:8px}}

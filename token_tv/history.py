@@ -12,6 +12,7 @@ from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
 MAX_DAYS = 3660
+MAX_HOURS = 2160
 
 
 def day_at(value):
@@ -125,7 +126,11 @@ class UsageHistory:
                            (account['id'], day, 1, int(delta is not None), delta or 0, value,
                             observed, observed, partial, restarted))
 
-    def query(self, key=None, start=None, end=None):
+    def query(self, key=None, start=None, end=None, granularity='day'):
+        if granularity == 'hour':
+            return self.query_hour(key, start, end)
+        if granularity != 'day':
+            raise ValueError('Unknown history granularity')
         today = datetime.now(KST).date()
         end_day = date.fromisoformat(end) if end else today
         start_day = date.fromisoformat(start) if start else end_day - timedelta(days=13)
@@ -170,11 +175,64 @@ class UsageHistory:
                                    'partial': bool(row['partial']) if row else False,
                                    'resets': row['resets'] if row else 0,
                                    'in_progress': day == today.isoformat()})
-        return {'schema': 1, 'timezone': 'Asia/Seoul', 'unit': 'percentage_points',
+        return {'schema': 1, 'timezone': 'Asia/Seoul', 'unit': 'percentage_points', 'granularity': 'day',
                 'today': today.isoformat(), 'start': start_day.isoformat(), 'end': end_day.isoformat(),
                 'accounts': available, 'account': selected['key'] if selected else None,
-                'first_observed_at': first, 'last_observed_at': last, 'days': points,
+                'first_observed_at': first, 'last_observed_at': last, 'days': points, 'buckets': points,
                 'range_used_pp': (round(sum(p['used_pp'] or 0 for p in points), 6)
                                   if any(p['used_pp'] is not None for p in points) else None),
                 'total_used_pp': round(total, 6) if total is not None else None,
                 'before_range_pp': round(before, 6)}
+
+    def query_hour(self, key=None, start=None, end=None):
+        current = datetime.now(KST).replace(minute=0, second=0, microsecond=0)
+
+        def parse(value, fallback):
+            result = datetime.fromisoformat(value) if value else fallback
+            result = result.replace(tzinfo=KST) if result.tzinfo is None else result.astimezone(KST)
+            if result.minute or result.second or result.microsecond:
+                raise ValueError('Hourly boundaries must fall on the hour')
+            return result
+
+        end_hour = parse(end, current)
+        start_hour = parse(start, end_hour - timedelta(hours=23))
+        count = int((end_hour - start_hour).total_seconds() / 3600) + 1
+        if not 1 <= count <= MAX_HOURS or end_hour > current:
+            raise ValueError('Choose 1 to 2160 hours ending no later than the current hour')
+        points, before = [], 0
+        with self.lock, self.connection() as db:
+            # Keep metadata, all-time totals and hourly readings in one locked snapshot.
+            result = self.query(key, current.date().isoformat(), current.date().isoformat())
+            account = self.accounts.get(result['account'])
+            if account:
+                start_at = start_hour.timestamp()
+                end_at = (end_hour + timedelta(hours=1)).timestamp()
+                before = db.execute('SELECT COALESCE(SUM(delta_pp),0) FROM observations WHERE account_id=? AND observed_at<?',
+                                    (account['id'], start_at)).fetchone()[0]
+                rows = {row['bucket']: row for row in db.execute('''
+                    SELECT CAST(observed_at / 3600 AS INTEGER) AS bucket,
+                        COUNT(*) AS observations, COUNT(delta_pp) AS intervals,
+                        COALESCE(SUM(delta_pp),0) AS used_pp,
+                        MAX(partial) AS partial, SUM(reset) AS resets
+                    FROM observations WHERE account_id=? AND observed_at>=? AND observed_at<?
+                    GROUP BY bucket ORDER BY bucket''', (account['id'], start_at, end_at))}
+                cumulative = before
+                for offset in range(count):
+                    hour = start_hour + timedelta(hours=offset)
+                    row = rows.get(int(hour.timestamp() // 3600))
+                    if row:
+                        cumulative += row['used_pp']
+                    points.append({'date': hour.isoformat(timespec='minutes')[:16],
+                                   'used_pp': round(row['used_pp'], 6) if row and row['intervals'] else None,
+                                   'cumulative_pp': round(cumulative, 6) if row else None,
+                                   'observations': row['observations'] if row else 0,
+                                   'partial': bool(row['partial']) if row else False,
+                                   'resets': row['resets'] if row else 0,
+                                   'in_progress': hour == current})
+        result.pop('days', None)
+        result.update(granularity='hour', start=start_hour.isoformat(timespec='minutes')[:16],
+                      end=end_hour.isoformat(timespec='minutes')[:16], hours=points, buckets=points,
+                      before_range_pp=round(before, 6),
+                      range_used_pp=(round(sum(p['used_pp'] or 0 for p in points), 6)
+                                     if any(p['used_pp'] is not None for p in points) else None))
+        return result
