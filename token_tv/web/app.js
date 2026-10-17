@@ -18,6 +18,7 @@ if (!accountChoices || typeof accountChoices !== 'object' || Array.isArray(accou
 // The static demo (scripts/build_demo.py) serves sample data and pre-rendered clock frames.
 const DEMO = document.documentElement.hasAttribute('data-demo');
 let snapshot = null, offline = false, polling = false, displayInfo = null, clockChoice = null, applying = false, clockError = false;
+const retryRequests = new Map();
 const el = (tag, text, cls) => {const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n};
 function svgNode(tag, attrs) {const n = document.createElementNS(svgNS, tag); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n}
 const clamp = v => Math.max(0, Math.min(100, v));
@@ -190,12 +191,42 @@ function providerCard(provider, accounts) {
  if (!DEMO && a.login_available) {
   const connection = el('div', undefined, 'account-connect');
   const authError = ['auth_required', 'identity_mismatch'].includes(a.status) || ['http_401', 'http_403', 'auth_required', 'identity_mismatch'].includes(a.error_code);
-  const reason = authError ? '인증이 만료되었거나 계정 확인이 필요합니다.' : '이 계정의 로그인을 다시 연결할 수 있습니다.';
+  const retry = a.retry || {}, local = retryRequests.get(a.key);
+  const busy = local?.pending || ['queued','running'].includes(retry.phase);
+  const cooldown = Math.max(0,Math.ceil((a.auth_recovery?.next_attempt_at || 0) - Date.now()/1000));
+  const reason = local?.message || (busy ? (retry.message || '연결 재시도를 요청하고 있습니다.') :
+   a.status === 'ok' && retry.phase === 'succeeded' ? retry.message :
+   authError && cooldown ? `인증 갱신 재시도 대기 · 약 ${Math.ceil(cooldown/60)}분 후 자동 재시도합니다. 다시 로그인할 수도 있습니다.` :
+   retry.phase === 'failed' && a.status !== 'ok' ? retry.message :
+   authError ? '인증 연결을 재시도하거나 다시 로그인해 주세요.' : '사용량 조회와 인증 연결을 다시 확인할 수 있습니다.');
   connection.dataset.needsLogin = String(authError);
+  const message=el('span',reason); message.setAttribute('role','status');
+  const actions=el('div',undefined,'account-connect-actions');
+  if(a.retry_available) {
+   const retryButton=el('button',busy?'연결 확인 중…':'연결 재시도','control'); retryButton.type='button';
+   retryButton.dataset.retryAccount=a.key; retryButton.setAttribute('aria-label',`${a.alias} 연결 재시도`);
+   retryButton.disabled=Boolean(busy || retry.retry_after_seconds>0);
+   retryButton.onclick=()=>retryAccount(a.key); actions.append(retryButton);
+  }
   const button = el('button', '다시 로그인', 'control'); button.type = 'button'; button.dataset.loginAccount = a.key; button.onclick = () => openLogin(a.key);
-  connection.append(el('span', reason), button); card.append(connection);
+  button.disabled=Boolean(busy);
+  actions.append(button); connection.append(message, actions); card.append(connection);
  }
  shell.append(card); return shell;
+}
+async function retryAccount(key) {
+ if(retryRequests.get(key)?.pending) return;
+ retryRequests.set(key,{pending:true}); renderAccounts();
+ try {
+  const response=await fetch('/accounts/'+encodeURIComponent(key)+'/retry',{
+   method:'POST',headers:{'Content-Type':'application/json','X-TokenTV-Request':'1'},body:'{}'});
+  const result=await response.json();
+  if(!response.ok) throw Error(result.message || '재시도를 요청하지 못했습니다.');
+  retryRequests.delete(key);
+ } catch(error) {
+  retryRequests.set(key,{pending:false,message:error.message || '서버에 연결하지 못했습니다.',expiresAt:Date.now()+10000});
+ }
+ await update();
 }
 function renderAccounts() {
  if (!snapshot) return;
@@ -219,7 +250,9 @@ async function update() {
  try {
   const r = await fetch(DEMO ? '/demo-snapshot.json' : '/snapshot', {cache:'no-store'}); if (!r.ok) throw Error();
   const data = DEMO ? demoSnapshot(await r.json()) : await r.json(); if (!data.accounts || !Number.isFinite(data.updated_at)) throw Error();
+  const changed=snapshot && Object.values(data.accounts).some(a=>a.fetched_at !== snapshot.accounts[a.key]?.fetched_at);
   snapshot = data; offline = false;
+  if(changed) {document.dispatchEvent(new Event('tokentv:usage-updated')); refreshDisplay()}
   const staleCount = Object.values(data.accounts).filter(a => a.status === 'stale').length;
   $('#connection').textContent = DEMO ? 'Demo · sample data' : staleCount ? `${staleCount} stale · Live server` : 'Live';
   $('#notice').hidden = !staleCount; $('#notice').textContent = staleCount + ' account' + (staleCount === 1 ? ' has' : 's have') + ' an older reading. Check the selected account’s source and last successful update.';
@@ -299,3 +332,8 @@ $('#frame').onerror = () => {$('#display-state').textContent = 'Clock preview un
 
 $('#mascot').append(retroMascot()); buildStarfield(); tick();
 update(); refreshDisplay(); loadThemes(); setInterval(update, 30000); setInterval(tick, 1000); setInterval(() => {if (!$('#clock-panel').hidden) refreshDisplay()}, 5000);
+setInterval(()=>{
+ for(const [key,value] of retryRequests) if(!value.pending && value.expiresAt<=Date.now()) retryRequests.delete(key);
+ if(!document.hidden && (retryRequests.size || Object.values(snapshot?.accounts || {}).some(a=>['queued','running'].includes(a.retry?.phase) || a.retry?.retry_after_seconds>0))) update();
+},2000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden) update()});

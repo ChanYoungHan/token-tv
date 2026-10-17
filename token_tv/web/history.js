@@ -144,7 +144,7 @@
   dailyMax*=1.12; cumulativeMax*=1.12;
   const width=WIDTH-LEFT-RIGHT,cell=width/span,height=BOTTOM-TOP;
   const nodes=[make('title',{id:'history-chart-title'},`전체 계정의 ${bucketName()} 사용량과 누적 사용량: ${bucketText(start)}부터 ${bucketText(end)}`),
-   make('desc',{id:'history-chart-desc'},`계정별 색상으로 구분합니다. 막대는 왼쪽 축의 ${bucketName()} 사용량, 선은 오른쪽 축의 수집 누적량입니다. 다이아몬드는 주간 한도 리셋을 인식한 시점입니다. 마커를 누르거나 초점을 두면 상세 정보를 표시합니다. 계정별 값은 합산하지 않습니다.`)];
+   make('desc',{id:'history-chart-desc'},`계정별 색상으로 구분합니다. 막대는 왼쪽 축의 ${bucketName()} 사용량, 선은 오른쪽 축의 수집 누적량입니다. 점선은 관측이 없는 구간의 앞뒤 누적값을 연결하며 중간의 시간별 사용량을 뜻하지 않습니다. 다이아몬드는 주간 한도 리셋을 인식한 시점입니다. 마커를 누르거나 초점을 두면 상세 정보를 표시합니다. 계정별 값은 합산하지 않습니다.`)];
   nodes.push(make('text',{x:LEFT,y:14,class:'history-axis-label'},bucketName()+' %p'),make('text',{x:WIDTH-RIGHT,y:14,'text-anchor':'end',class:'history-axis-label'},'수집 누적 %p'));
   for(let i=0;i<=4;i++) {
    const y=BOTTOM-height*i/4;
@@ -165,7 +165,7 @@
   }
   visibleSeries.forEach((series,seriesIndex)=>{
    const group=make('g',{style:`--series-color:${series.color}`,'data-history-account':series.key});
-   let path='',joined=false;
+   let path='',gapPath='',previous=null;
    const slot=cell*.72/visibleSeries.length;
    for(let index=0;index<series.points.length;index++) {
     const point=series.points[index],center=LEFT+(index+.14)*cell+(seriesIndex+.5)*slot;
@@ -176,10 +176,14 @@
     }
     if(finite(point.cumulative_pp)) {
      const y=BOTTOM-point.cumulative_pp/cumulativeMax*height;
-     path+=`${joined?'L':'M'}${center},${y} `; joined=true;
+     const gap=previous && index>previous.index+1;
+     if(gap) gapPath+=`M${previous.x},${previous.y} L${center},${y} `;
+     path+=`${previous&&!gap?'L':'M'}${center},${y} `;
+     previous={index,x:center,y};
      group.append(make('circle',{cx:center,cy:y,r:span>100?1.8:3.5,class:'history-point'}));
-    } else joined=false;
+    }
    }
+   if(gapPath) group.append(make('path',{d:gapPath,class:'history-line history-gap-line'}));
    if(path) group.append(make('path',{d:path,class:'history-line'}));
    nodes.push(group);
   });
@@ -326,7 +330,9 @@
   for (const series of visibleSeries) {
    const item = series.points[index], row = element('div', 'history-tooltip-row');
    row.style.setProperty('--series-color', series.color);
-   row.append(element('i', 'history-account-dot'), element('span', '', `${series.alias} · ${bucketName()} ${amount(item.used_pp)} · 누적 ${amount(item.cumulative_pp)}${item.partial ? ' · 부분*' : ''}`));
+   row.append(element('i', 'history-account-dot'), element('span', '', item.observations ?
+    `${series.alias} · ${bucketName()} ${amount(item.used_pp)} · 누적 ${amount(item.cumulative_pp)}${item.partial ? ' · 부분*' : ''}` :
+    `${series.alias} · 관측 없음 · 점선은 앞뒤 누적값 연결`));
    rows.push(row);
   }
   q('tooltip').replaceChildren(...rows);
@@ -346,5 +352,6 @@
   if (!document.hidden && !drag && ![q('start'), q('end')].includes(document.activeElement)) refresh();
  }, 30000);
  document.addEventListener('visibilitychange', () => {if (!document.hidden) refresh()});
+ document.addEventListener('tokentv:usage-updated',()=>{if(!document.hidden&&!drag) refresh()});
  new ResizeObserver(() => {if (data && !drag) render()}).observe(q('plot'));
 })();
