@@ -20,6 +20,8 @@
  const amount = value => finite(value) ? fmt(value) + ' %p' : '—';
  const kstDay = epoch => new Date(epoch * 1000 + 9 * 3600000).toISOString().slice(0,mode === 'hour' ? 16 : 10);
  const timeLabel = epoch => epoch ? new Intl.DateTimeFormat('ko-KR', {timeZone:'Asia/Seoul', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false}).format(new Date(epoch * 1000)) : '아직 없음';
+ const resetTime = epoch => new Date(epoch * 1000 + 9 * 3600000).toISOString().slice(0,19).replace('T',' ') + ' KST';
+ const resetTick = event => (event.observed_at * 1000 + 9 * 3600000) / stepMs();
  const make = (tag, attrs = {}, text) => {
   const node = document.createElementNS(NS, tag);
   for (const [key,value] of Object.entries(attrs)) node.setAttribute(key,value);
@@ -30,6 +32,7 @@
  let data = null, rangeStart = null, rangeEnd = null, domainStart = 0, domainEnd = 0;
  let generation = 0, controller = null, drag = null, follow = true;
  let visible = [], visibleSeries = [], failed = false;
+ const resetMarkers = new Map();
  const hiddenAccounts = new Set();
  function colors(accounts) {
   const palette=['#ffad66','#5fd8ff','#c5a3ff','#65e2ba','#ff8faf','#e6d66e'], used=new Set(), result=new Map();
@@ -64,6 +67,15 @@
   }
  }
  function activeSeries() {return data.series.filter(series=>!hiddenAccounts.has(series.key))}
+ function showReset(node) {
+  const marker = resetMarkers.get(node?.dataset.resetEvent);
+  if (!marker) return;
+  const {series,event} = marker, row = element('div','history-tooltip-row');
+  row.style.setProperty('--series-color',series.color);
+  row.append(element('i','history-account-dot'),element('span','',`${series.alias} · 새 주기 사용률 ${fmt(event.used_percent)}% · 수집 누적 ${amount(event.cumulative_pp)}`));
+  q('tooltip').replaceChildren(element('strong','','주간 한도 리셋 인식 · '+resetTime(event.observed_at)),row);
+  q('tooltip').hidden = false;
+ }
  function legend() {
   const nodes=data.series.map(series=>{
    const button=element('button','history-account-toggle'); button.type='button'; button.dataset.key=series.key;
@@ -99,6 +111,7 @@
  }
  function render() {
   if(!data) return;
+  resetMarkers.clear(); q('tooltip').hidden=true;
   WIDTH=Math.max(260,Math.round(chart.clientWidth||900)); chart.setAttribute('viewBox',`0 0 ${WIDTH} 300`);
   const start=iso(rangeStart), end=iso(rangeEnd-1), span=rangeEnd-rangeStart;
   visibleSeries=activeSeries().map(series=>({...series,points:series.days.filter(point=>point.date>=start&&point.date<=end)}));
@@ -131,7 +144,7 @@
   dailyMax*=1.12; cumulativeMax*=1.12;
   const width=WIDTH-LEFT-RIGHT,cell=width/span,height=BOTTOM-TOP;
   const nodes=[make('title',{id:'history-chart-title'},`전체 계정의 ${bucketName()} 사용량과 누적 사용량: ${bucketText(start)}부터 ${bucketText(end)}`),
-   make('desc',{id:'history-chart-desc'},`계정별 색상으로 구분합니다. 막대는 왼쪽 축의 ${bucketName()} 사용량, 선은 오른쪽 축의 수집 누적량입니다. 계정별 값은 합산하지 않습니다.`)];
+   make('desc',{id:'history-chart-desc'},`계정별 색상으로 구분합니다. 막대는 왼쪽 축의 ${bucketName()} 사용량, 선은 오른쪽 축의 수집 누적량입니다. 다이아몬드는 주간 한도 리셋을 인식한 시점입니다. 마커를 누르거나 초점을 두면 상세 정보를 표시합니다. 계정별 값은 합산하지 않습니다.`)];
   nodes.push(make('text',{x:LEFT,y:14,class:'history-axis-label'},bucketName()+' %p'),make('text',{x:WIDTH-RIGHT,y:14,'text-anchor':'end',class:'history-axis-label'},'수집 누적 %p'));
   for(let i=0;i<=4;i++) {
    const y=BOTTOM-height*i/4;
@@ -170,6 +183,20 @@
    if(path) group.append(make('path',{d:path,class:'history-line'}));
    nodes.push(group);
   });
+  for(const series of visibleSeries) for(const event of series.reset_events || []) {
+   const tick=resetTick(event);
+   if(!finite(tick) || !finite(event.cumulative_pp) || tick<rangeStart || tick>=rangeEnd) continue;
+   const x=LEFT+(tick-rangeStart)*cell, y=BOTTOM-event.cumulative_pp/cumulativeMax*height;
+   const id=String(resetMarkers.size);
+   resetMarkers.set(id,{series,event});
+   const group=make('g',{style:`--series-color:${series.color}`,class:'history-reset-marker',
+    'data-reset-event':id,tabindex:0,role:'button',
+    'aria-label':`${series.alias} 주간 한도 리셋 인식 ${resetTime(event.observed_at)}, 새 주기 사용률 ${fmt(event.used_percent)}%, 수집 누적 ${amount(event.cumulative_pp)}`});
+   group.append(make('line',{x1:x,x2:x,y1:TOP,y2:BOTTOM,class:'history-reset-guide'}),
+    make('circle',{cx:x,cy:y,r:13,class:'history-reset-hit'}),
+    make('path',{d:`M${x},${y-6} L${x+6},${y} L${x},${y+6} L${x-6},${y} Z`,class:'history-reset-diamond'}));
+   nodes.push(group);
+  }
   if(!observedBuckets) nodes.push(make('text',{x:WIDTH/2,y:136,'text-anchor':'middle',class:'history-empty'},'이 기간에 수집된 기록이 없습니다'));
   chart.replaceChildren(...nodes);
   if(!drag) {
@@ -189,7 +216,7 @@
   const firsts=data.series.filter(series=>series.first_observed_at), last=Math.max(0,...data.series.map(series=>series.last_observed_at||0));
   if(failed) q('message').textContent='기록을 새로 불러오지 못했습니다. 마지막으로 받은 데이터를 표시합니다.';
   else if(!firsts.length) q('message').textContent='첫 정상 주간 사용량을 기다립니다. 계정별로 정상 조회된 값부터 기록합니다.';
-  else q('message').textContent=`${visibleSeries.length}개 계정 · ${span}${bucketUnit()} 표시 · ${observedBuckets}${bucketUnit()} 관측 · 마지막 수집 ${timeLabel(last)} KST · * 부분 기록, 현재 구간은 수집 중`;
+  else q('message').textContent=`${visibleSeries.length}개 계정 · ${span}${bucketUnit()} 표시 · ${observedBuckets}${bucketUnit()} 관측 · 리셋 인식 ${resetMarkers.size}회 · 마지막 수집 ${timeLabel(last)} KST · * 부분 기록, 현재 구간은 수집 중`;
   overview();
  }
  async function refresh() {
@@ -245,7 +272,7 @@
    scale: kind === 'chart' ? (WIDTH - LEFT - RIGHT) / WIDTH * chart.getBoundingClientRect().width : nav.getBoundingClientRect().width};
   surface.setPointerCapture(event.pointerId); root.classList.add('history-dragging');
  }
- chart.addEventListener('pointerdown', event => begin(event, 'chart', chart));
+ chart.addEventListener('pointerdown', event => {if(!event.target.closest('[data-reset-event]')) begin(event, 'chart', chart)});
  nav.addEventListener('pointerdown', event => {
   if (!data) return;
   const kind = event.target.closest('#history-handle-start') ? 'start' : event.target.closest('#history-handle-end') ? 'end' : 'move';
@@ -289,6 +316,8 @@
  });
  chart.addEventListener('pointermove', event => {
   if (drag || !data || !visible.length) return;
+  const marker=event.target.closest('[data-reset-event]');
+  if(marker) {showReset(marker); return}
   const rect = chart.getBoundingClientRect(), logical = (event.clientX - rect.left) / rect.width * WIDTH;
   const index = Math.floor((logical - LEFT) / (WIDTH - LEFT - RIGHT) * (rangeEnd - rangeStart));
   const point = visible[index];
@@ -302,6 +331,14 @@
   }
   q('tooltip').replaceChildren(...rows);
   q('tooltip').hidden = false;
+ });
+ chart.addEventListener('click', event => showReset(event.target.closest('[data-reset-event]')));
+ chart.addEventListener('focusin', event => showReset(event.target.closest('[data-reset-event]')));
+ chart.addEventListener('focusout', () => {q('tooltip').hidden=true});
+ chart.addEventListener('keydown', event => {
+  const marker=event.target.closest('[data-reset-event]');
+  if(marker && ['Enter',' '].includes(event.key)) {event.preventDefault(); showReset(marker)}
+  if(event.key==='Escape') q('tooltip').hidden=true;
  });
  chart.addEventListener('pointerleave', () => {q('tooltip').hidden = true});
  refresh();

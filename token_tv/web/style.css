@@ -770,6 +770,12 @@ h1{margin:0;font:600 48px/1.04 var(--font-display);letter-spacing:-.03em;color:v
 .history-partial{opacity:.4;stroke:var(--series-color,var(--history-accent));stroke-width:1;stroke-dasharray:3 2}
 .history-line{fill:none;stroke:var(--series-color,var(--history-line));stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .history-point{fill:var(--series-color,var(--history-line));stroke:var(--panel);stroke-width:1.5;pointer-events:none}
+.history-key .history-reset-key{width:8px;height:8px;margin:0 3px;transform:rotate(45deg);background:var(--ink-2);opacity:1}
+.history-reset-marker{cursor:pointer;outline:none}
+.history-reset-guide{stroke:var(--series-color);stroke-width:1;stroke-dasharray:3 4;opacity:.5;pointer-events:none}
+.history-reset-hit{fill:transparent;pointer-events:all}
+.history-reset-diamond{fill:var(--series-color);stroke:var(--panel);stroke-width:2;pointer-events:none}
+.history-reset-marker:hover .history-reset-hit,.history-reset-marker:focus .history-reset-hit{stroke:var(--series-color);stroke-width:1.5}
 .history-empty{fill:var(--ink-2);font:13px system-ui,sans-serif}
 .history-tooltip{position:absolute;top:22px;left:50%;transform:translateX(-50%);max-width:95%;width:max-content;padding:7px 11px;border:1px solid var(--line-2);border-radius:6px;background:var(--panel-2);color:var(--ink);font-size:11px;box-shadow:0 4px 16px #0005;pointer-events:none}
 .history-navigator{position:relative;height:50px;border:1px solid var(--line-2);border-radius:6px;background:var(--panel-2);touch-action:none;user-select:none;margin:0 10px}

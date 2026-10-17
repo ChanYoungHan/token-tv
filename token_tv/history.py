@@ -148,7 +148,7 @@ class UsageHistory:
                                  {'first_observed_at': bounds[0], 'last_observed_at': bounds[1]})
             selected = self.accounts.get(key) if key else next((self.accounts[a['key']] for a in available if a['first_observed_at']),
                                                              next(iter(self.accounts.values()), None))
-            points, before, total, first, last = [], 0, None, None, None
+            points, events, before, total, first, last = [], [], 0, None, None, None
             if selected:
                 account_id = selected['id']
                 before = db.execute('SELECT COALESCE(SUM(used_pp),0) FROM daily_usage WHERE account_id=? AND day<?',
@@ -175,14 +175,34 @@ class UsageHistory:
                                    'partial': bool(row['partial']) if row else False,
                                    'resets': row['resets'] if row else 0,
                                    'in_progress': day == today.isoformat()})
+                events = self.reset_events(db, account_id,
+                                           datetime.combine(start_day, datetime.min.time(), KST).timestamp(),
+                                           datetime.combine(end_day + timedelta(days=1), datetime.min.time(), KST).timestamp(),
+                                           before)
         return {'schema': 1, 'timezone': 'Asia/Seoul', 'unit': 'percentage_points', 'granularity': 'day',
                 'today': today.isoformat(), 'start': start_day.isoformat(), 'end': end_day.isoformat(),
                 'accounts': available, 'account': selected['key'] if selected else None,
                 'first_observed_at': first, 'last_observed_at': last, 'days': points, 'buckets': points,
+                'reset_events': events,
                 'range_used_pp': (round(sum(p['used_pp'] or 0 for p in points), 6)
                                   if any(p['used_pp'] is not None for p in points) else None),
                 'total_used_pp': round(total, 6) if total is not None else None,
                 'before_range_pp': round(before, 6)}
+
+    @staticmethod
+    def reset_events(db, account_id, start_at, end_at, before):
+        """Expose recognition times, without pretending polling saw the exact reset instant."""
+        rows = db.execute('''WITH timeline AS (
+            SELECT observed_at, used_percent, resets_at, reset,
+                SUM(COALESCE(delta_pp,0)) OVER (
+                    ORDER BY observed_at ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS increase
+            FROM observations WHERE account_id=? AND observed_at>=? AND observed_at<?
+        ) SELECT observed_at, used_percent, resets_at, increase
+          FROM timeline WHERE reset=1 ORDER BY observed_at''', (account_id, start_at, end_at))
+        return [{'observed_at': row['observed_at'], 'used_percent': row['used_percent'],
+                 'next_reset_at': row['resets_at'], 'cumulative_pp': round(before + row['increase'], 6)}
+                for row in rows]
 
     def query_hour(self, key=None, start=None, end=None):
         current = datetime.now(KST).replace(minute=0, second=0, microsecond=0)
@@ -199,7 +219,7 @@ class UsageHistory:
         count = int((end_hour - start_hour).total_seconds() / 3600) + 1
         if not 1 <= count <= MAX_HOURS or end_hour > current:
             raise ValueError('Choose 1 to 2160 hours ending no later than the current hour')
-        points, before = [], 0
+        points, events, before = [], [], 0
         with self.lock, self.connection() as db:
             # Keep metadata, all-time totals and hourly readings in one locked snapshot.
             result = self.query(key, current.date().isoformat(), current.date().isoformat())
@@ -229,9 +249,11 @@ class UsageHistory:
                                    'partial': bool(row['partial']) if row else False,
                                    'resets': row['resets'] if row else 0,
                                    'in_progress': hour == current})
+                events = self.reset_events(db, account['id'], start_at, end_at, before)
         result.pop('days', None)
         result.update(granularity='hour', start=start_hour.isoformat(timespec='minutes')[:16],
                       end=end_hour.isoformat(timespec='minutes')[:16], hours=points, buckets=points,
+                      reset_events=events,
                       before_range_pp=round(before, 6),
                       range_used_pp=(round(sum(p['used_pp'] or 0 for p in points), 6)
                                      if any(p['used_pp'] is not None for p in points) else None))
