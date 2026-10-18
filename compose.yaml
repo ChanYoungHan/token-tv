@@ -1,0 +1,29 @@
+name: token-tv
+
+services:
+  token-tv:
+    build:
+      context: .
+      args:
+        VCS_REF: ${TOKEN_TV_REVISION:-unknown}
+        CLAUDE_VERSION: ${TOKEN_TV_CLAUDE_VERSION:-2.1.296}
+        CODEX_VERSION: ${TOKEN_TV_CODEX_VERSION:-0.162.1}
+    image: ${TOKEN_TV_IMAGE:-token-tv:local}
+    init: true
+    restart: unless-stopped
+    environment:
+      TOKEN_TV_AUTH_HOSTS: ${TOKEN_TV_AUTH_HOSTS:-}
+    ports:
+      - "${TOKEN_TV_BIND_ADDRESS:-0.0.0.0}:8787:8787"
+    volumes:
+      - token-tv-data:/data
+    stop_grace_period: 30s
+
+volumes:
+  token-tv-data:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${TOKEN_TV_DOCKER_SUBNET:-172.16.241.0/24}
