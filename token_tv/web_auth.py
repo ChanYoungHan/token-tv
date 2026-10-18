@@ -54,13 +54,14 @@ class Login:
 
 class LoginManager:
     def __init__(self, accounts, on_success=lambda: None, verify=fetch_account,
-                 command=login_command, lifetime=900):
+                 command=login_command, lifetime=900, account_locks=None):
         self.accounts = {a['key']: dict(a) for a in accounts}
         self.on_success, self.verify, self.command = on_success, verify, command
         self.lifetime = lifetime
         self.lock = threading.RLock()
         self.jobs = {}
         self.closed = False
+        self.account_locks = account_locks or {key: threading.RLock() for key in self.accounts}
 
     def available(self, key):
         a = self.accounts.get(key, {})
@@ -154,6 +155,20 @@ class LoginManager:
                 job.message = '공식 로그인 페이지에서 인증을 완료해 주세요.'
 
     def _run(self, job):
+        # Polling, token rotation and browser login must not share a CLI home concurrently.
+        lock = self.account_locks[job.account['key']]
+        while not lock.acquire(timeout=.2):
+            if job.stop.is_set():
+                return
+            if time.monotonic() - job.started >= job.lifetime:
+                self._finish(job, 'expired', '로그인 대기 시간이 만료되었습니다. 다시 시도해 주세요.')
+                return
+        try:
+            self._run_locked(job)
+        finally:
+            lock.release()
+
+    def _run_locked(self, job):
         master = slave = None
         process = None
         # Output is transient and private; only allowlisted fields leave this worker.

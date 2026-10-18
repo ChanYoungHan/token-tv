@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/assets/style.css">
 <script src="/assets/app.js" defer></script>
 <script src="/assets/auth.js" defer></script>
+<script src="/assets/history.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#providers">Skip to usage</a>
@@ -67,6 +68,35 @@
       <p class="quiet">240 × 240 · The web appearance is separate from your clock style.</p>
     </aside>
   </div>
+  <section class="usage-history" id="usage-history" aria-labelledby="history-title">
+    <header class="history-head">
+      <div><p class="section-label">USAGE HISTORY · KST</p><h2 id="history-title">주간 사용량 기록</h2></div>
+      <span class="history-all-accounts">모든 계정 함께 보기</span>
+    </header>
+    <div class="history-metric-tabs" role="tablist" aria-label="사용량 기록 종류">
+      <button class="control" type="button" id="history-tab-increase" role="tab" aria-selected="true" aria-controls="history-panel" data-history-metric="increase">증가분·누적</button>
+      <button class="control" type="button" id="history-tab-weekly" role="tab" aria-selected="false" aria-controls="history-panel" tabindex="-1" data-history-metric="weekly">주간 사용률</button>
+    </div>
+    <div id="history-panel" role="tabpanel" aria-labelledby="history-tab-increase">
+    <p class="history-description" id="history-description">계정별 사용량을 한눈에 비교하세요. 같은 색의 막대와 선이 같은 계정을 나타냅니다.</p>
+    <div class="history-granularity" role="group" aria-label="사용량 집계 단위"><button class="control" type="button" data-history-granularity="day" aria-pressed="true">일별</button><button class="control" type="button" data-history-granularity="hour" aria-pressed="false">시간별</button></div>
+    <div class="history-stats" id="history-stats"></div>
+    <div class="history-toolbar">
+      <div class="history-dates"><label>시작<input class="control" id="history-start" type="date"></label><span aria-hidden="true">—</span><label>종료<input class="control" id="history-end" type="date"></label></div>
+      <div class="history-actions"><button class="control" id="history-zoom-in" type="button" aria-label="조회 기간 줄이기">＋ 확대</button><button class="control" id="history-zoom-out" type="button" aria-label="조회 기간 늘리기">− 축소</button><button class="control" id="history-reset" type="button">최근 2주</button></div>
+    </div>
+    <div class="history-account-legend" id="history-legend" role="group" aria-label="계정별 그래프 표시"></div>
+    <div class="history-key"><span><i class="history-bar-key"></i><span id="history-usage-key">막대: 일별 사용 · 왼쪽 축</span></span><span><i class="history-line-key"></i><span id="history-line-key">선: 수집 누적 · 오른쪽 축</span></span><span><i class="history-gap-key"></i>점선: 관측 누락 구간 연결</span><span><i class="history-reset-key"></i>주간 한도 리셋 인식</span><span id="history-unit-key">%p = 주간 한도의 퍼센트포인트</span></div>
+    <div class="history-plot" id="history-plot"><svg id="history-chart" viewBox="0 0 900 300" role="group" aria-labelledby="history-chart-title history-chart-desc"><title id="history-chart-title">일별 사용량과 누적 사용량</title><desc id="history-chart-desc">아래 기간 선택기의 양 끝을 드래그하면 조회 기간을 늘리거나 줄일 수 있습니다.</desc></svg><div class="history-tooltip" id="history-tooltip" role="status" hidden></div></div>
+    <div class="history-navigator" id="history-navigator" aria-label="드래그로 조회 기간 선택">
+      <svg id="history-overview" viewBox="0 0 900 48" aria-hidden="true"></svg>
+      <div class="history-selection" id="history-selection"><button type="button" class="history-handle history-handle-start" id="history-handle-start" role="slider" aria-label="조회 시작일"></button><span class="history-selection-grip" aria-hidden="true">⋮⋮</span><button type="button" class="history-handle history-handle-end" id="history-handle-end" role="slider" aria-label="조회 종료일"></button></div>
+    </div>
+    <p class="history-hint">위 그래프를 좌우로 드래그해 이동하세요. 아래 선택 영역의 양 끝을 드래그하면 기간이 바뀝니다. 날짜 입력과 확대·축소 버튼도 사용할 수 있습니다.</p>
+    <p class="history-message" id="history-message" role="status" aria-live="polite">사용량 기록을 불러오는 중입니다.</p>
+    <details class="history-details"><summary>집계 기준과 상세 수치</summary><p id="history-details-text">첫 관측값을 기준점으로 삼아 이후 주간 사용률의 증가분만 더합니다. 주간 초기화 후에도 누적은 이어지며, 기록 전의 사용량은 포함하지 않습니다. %p는 토큰 수가 아닙니다. 계정마다 한도가 다르므로 계정별 값을 합산하지 않고 비교합니다. 한국 시간의 조회 시각으로 시간별·일별 집계하며, 빈 구간은 0으로 채우지 않습니다. 앞뒤 누적 관측값이 있는 빈 구간은 점선으로 연결합니다. 점선은 중간 시각의 측정값이 아니며 시간별 사용량을 추정하지 않습니다. 정시 경계에는 조회 주기만큼의 오차가 있고, 긴 중단 뒤 증가분은 복구 관측 시간에 반영될 수 있습니다. 긴 중단이 날짜를 넘기면 그 사이 증가분은 집계에서 제외합니다. 초기화 전 마지막 조회 이후의 사용량도 알 수 없으므로 관측된 최소 사용량입니다. 부분 기록은 별표로 표시합니다.</p><div class="history-table-wrap"><table><caption>선택 기간의 계정별 사용 기록</caption><thead><tr><th id="history-bucket-column">날짜 · KST</th><th>계정</th><th id="history-usage-column">일별 사용 (%p)</th><th id="history-secondary-column">수집 누적 (%p)</th><th>관측</th></tr></thead><tbody id="history-table"></tbody></table></div></details>
+    </div>
+  </section>
   <section class="gallery" id="gallery" aria-labelledby="gallery-title">
     <div class="themes-head"><h2 id="gallery-title">Gallery</h2><div class="theme-sort" role="group" aria-label="Sort clock faces"><button type="button" class="control" data-sort="popular" aria-pressed="true">Popular</button><button type="button" class="control" data-sort="new" aria-pressed="false">New</button></div></div>
     <p class="quiet" id="likes-as-of">Loading clock faces</p>

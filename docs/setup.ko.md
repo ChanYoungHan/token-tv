@@ -205,3 +205,28 @@ The test captures four desktop/mobile appearances, tests five viewport widths,
 account choices, missing/stale/offline data, and clock controls. Its apply request
 is intercepted, so running it does not change a connected clock.
 
+
+
+## 절전 복귀와 인증 자동 갱신
+
+웹 서버(`token-tv run`)는 기본 약 5분마다 계정 사용량을 조회합니다.
+직접 연결한 Claude 계정은 프로필·사용량 조회가 HTTP 401이면 공식 CLI로 토큰 갱신을 한 번 시도하고 다시 조회합니다.
+기존 `refresh_with_cli` 설정을 변경하지 않고 서버의 갱신 정책으로 적용합니다.
+CLI 갱신은 도구 없이 짧은 모델 요청 1회를 실행하며 60초로 제한합니다.
+계속 실패하면 갱신 시도 간격을 5분 → 15분 → 45분 → 최대 60분으로 늘립니다.
+일반 사용량 조회는 약 5분 주기를 유지하고 정상 인증·조회 성공 시 갱신 실패 횟수를 초기화합니다.
+HTTP 403·429와 네트워크 오류로는 Claude 토큰 갱신을 실행하지 않습니다.
+자동 갱신을 끄려면 서버 환경 변수 `TOKEN_TV_AUTO_REFRESH=0`을 지정합니다.
+Codex는 기존처럼 조회할 때 공식 CLI의 `account/read(refreshToken=true)`를 사용합니다.
+
+계정의 **연결 재시도**는 다음 정기 조회를 기다리지 않고 해당 계정을 조회합니다.
+401이 발생하면 자동 갱신과 같은 경로를 사용하며, 갱신 대기 시간을 건너뛰지 않습니다.
+연속 클릭은 30초 간격으로 제한하고 요청 중인 재시도는 합칩니다.
+성공한 관측은 즉시 상태와 DB에 반영하고 이어서 시계 이미지를 전송합니다.
+실패 원인과 자동 갱신 대기 상태를 표시하고 **다시 로그인**도 계속 제공합니다.
+재시도 API는 `POST /accounts/<key>/retry`이며 기존 웹 로그인과 같은 Origin·요청 헤더 검사를 적용합니다.
+인증 갱신·정기 조회·웹 로그인은 계정별로 직렬 실행하여 동일 CLI 홈의 토큰 회전을 겹치지 않게 합니다.
+
+절전 복귀나 큰 시각 변화를 약 30초 간격으로 확인해 필요하면 정기 조회 시점을 앞당깁니다.
+실제 복구 시점은 운영체제·Docker·네트워크가 다시 동작하는 시점에 영향을 받습니다.
+이전 관측은 새 정상 조회가 성공할 때까지 `OLD`로 유지하며, DB에 실패한 조회를 정상 관측으로 저장하지 않습니다.

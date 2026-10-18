@@ -192,7 +192,7 @@ def claude_token(root):
     raise SourceError("auth_required")
 
 
-def claude_payload(account):
+def claude_payload(account, before_refresh=None):
     root = Path(account["source_home"]).expanduser()
     token = claude_token(root)
     headers = {"Authorization": "Bearer " + token, "Accept": "application/json",
@@ -202,6 +202,8 @@ def claude_payload(account):
         usage = json_get("https://api.anthropic.com/api/oauth/usage", headers)
     except HTTPError as error:
         if error.code != 401 or not account.get("refresh_with_cli"):
+            raise
+        if before_refresh is not None and not before_refresh():
             raise
         # The CLI owns refresh/rotation. No manual refresh-token writes.
         env = scoped_env("claude", root)
@@ -396,7 +398,7 @@ def imported_row(account):
     return clean
 
 
-def fetch_account(account):
+def fetch_account(account, before_refresh=None):
     row = {"key": account["key"], "alias": account["alias"], "provider": account["provider"],
            "status": "auth_required", "windows": [], "fetched_at": time.time(),
            "identity_verified": False, "source": "mini"}
@@ -413,7 +415,7 @@ def fetch_account(account):
             row["windows"] = normalize_codexbar(entry)
             row["identity_verified"] = verified
         elif account["provider"] == "claude":
-            profile, data = claude_payload(account)
+            profile, data = claude_payload(account, before_refresh)
             if not identity_matches(account["email"], email_from_profile(profile)):
                 raise SourceError("identity_mismatch")
             row["windows"] = normalize_claude(data)

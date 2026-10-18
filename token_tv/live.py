@@ -4,6 +4,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import sqlite3
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -17,6 +18,7 @@ from token_tv.web_assets import HTML, ASSETS, asset
 from token_tv.sources import load_config
 from token_tv.state import UsageStore
 from token_tv.web_auth import LoginManager
+from token_tv.history import UsageHistory
 
 
 def write_json(path, data):
@@ -78,7 +80,7 @@ class DisplayPreferences:
             self.status = ('queued' if style != self.style else 'ok' if success else 'error')
 
 
-def handler(store, preferences=None, logins=None):
+def handler(store, preferences=None, logins=None, history=None, on_retry=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             return
@@ -86,6 +88,29 @@ def handler(store, preferences=None, logins=None):
         def do_GET(self):
             url = urlparse(self.path)
             path = url.path
+            if path == '/history':
+                if history is None:
+                    self.reply(503, b'{"error":"history_unavailable"}')
+                    return
+                query = parse_qs(url.query, keep_blank_values=True)
+                if set(query) - {'account', 'start', 'end', 'granularity'} or any(len(v) != 1 for v in query.values()):
+                    self.reply(400, b'{"error":"invalid_history_query"}')
+                    return
+                try:
+                    data = history.query(key=query.get('account', [None])[0],
+                                         start=query.get('start', [None])[0], end=query.get('end', [None])[0],
+                                         granularity=query.get('granularity', ['day'])[0])
+                except (ValueError, OverflowError):
+                    self.reply(400, b'{"error":"invalid_history_range"}')
+                    return
+                except KeyError:
+                    self.reply(404, b'{"error":"unknown_history_account"}')
+                    return
+                except (sqlite3.Error, OSError):
+                    self.reply(503, b'{"error":"history_unavailable"}')
+                    return
+                self.reply(200, json.dumps(data, ensure_ascii=False).encode())
+                return
             if path.startswith('/auth/'):
                 if not self.auth_origin():
                     return
@@ -147,6 +172,9 @@ def handler(store, preferences=None, logins=None):
             self.wfile.write(body)
 
         def do_POST(self):
+            if urlparse(self.path).path.startswith('/accounts/'):
+                self.retry_post()
+                return
             if urlparse(self.path).path.startswith('/auth/'):
                 self.auth_post()
                 return
@@ -175,6 +203,36 @@ def handler(store, preferences=None, logins=None):
                 self.send_error(500, 'Could not save display choice')
                 return
             self.reply(200, json.dumps(preferences.snapshot()).encode())
+
+        def retry_post(self):
+            if not self.auth_origin():
+                return
+            parts = urlparse(self.path).path.split('/')
+            if len(parts) != 4 or parts[3] != 'retry' or on_retry is None:
+                self.send_error(404)
+                return
+            key = parts[2]
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if (not 0 < length <= 128 or self.headers.get('Transfer-Encoding')
+                        or self.headers.get('Content-Type', '').split(';')[0] != 'application/json'
+                        or self.headers.get('X-TokenTV-Request') != '1'):
+                    raise ValueError()
+                self.connection.settimeout(10)
+                if json.loads(self.rfile.read(length)) != {}:
+                    raise ValueError()
+                if logins and key in logins.active_keys():
+                    self.reply(409, json.dumps({'message': '로그인 진행 중입니다. 완료 후 다시 시도해 주세요.'}).encode())
+                    return
+                store.request_retry(key)
+                on_retry()
+            except KeyError:
+                self.reply(404, b'{"message":"retry_unavailable"}')
+                return
+            except (ValueError, UnicodeError, OSError):
+                self.reply(400, b'{"message":"invalid_retry_request"}')
+                return
+            self.reply(202, json.dumps(store.snapshot()['accounts'][key]['retry']).encode())
 
         def auth_origin(self):
             # An unauthenticated LAN UI still rejects foreign browser origins and DNS rebinding.
@@ -263,9 +321,14 @@ def main():
         device.restore(original)
         print("Original display selection restored.")
         return
-    store = UsageStore(config["accounts"])
+    store = UsageStore(config["accounts"], auto_refresh=os.environ.get('TOKEN_TV_AUTO_REFRESH', '1') != '0')
     preferences = DisplayPreferences(args.config, config)
     interval = max(60, int(config.get("poll_seconds", 300)))
+    try:
+        history = UsageHistory(state_dir / 'usage-history.sqlite3', config['accounts'], interval)
+    except (sqlite3.Error, OSError, ValueError):
+        history = None
+        print('TokenTV history unavailable; live readings remain enabled.', flush=True)
     stopping = threading.Event()
     refresh_requested = threading.Event()
 
@@ -273,16 +336,21 @@ def main():
         refresh_requested.set()
         preferences.changed.set()
 
-    logins = LoginManager(config['accounts'], on_success=logged_in)
+    logins = LoginManager(config['accounts'], on_success=logged_in, account_locks=store.account_locks)
     original = None
     active_file = None
     last_upload = None
 
-    def cycle(refresh=True):
+    def cycle(refresh=True, only_keys=None):
         nonlocal original, active_file, last_upload
         if refresh:
-            store.refresh(skip_keys=logins.active_keys())
+            store.refresh(skip_keys=logins.active_keys(), only_keys=only_keys)
         snapshot = store.snapshot()
+        if refresh and history:
+            try:
+                history.record(snapshot)
+            except (sqlite3.Error, OSError):
+                print('TokenTV history write failed; live readings remain enabled.', flush=True)
         style = preferences.snapshot()['style']
         if not args.once and device:
             receipts = []
@@ -323,25 +391,40 @@ def main():
 
     def poll():
         next_refresh = 0
+        last_wall, last_tick = time.time(), time.monotonic()
         while not stopping.is_set():
             preferences.changed.clear()
+            wall, tick = time.time(), time.monotonic()
+            # A suspended host may resume with different wall/monotonic clock progress.
+            resumed = wall - last_wall > 90 or abs((wall-last_wall) - (tick-last_tick)) > 30
+            last_wall, last_tick = wall, tick
             requested = refresh_requested.is_set()
             if requested:
                 refresh_requested.clear()
-            refresh = requested or time.monotonic() >= next_refresh
+            retry_keys = store.take_retries()
+            scheduled = requested or resumed or time.monotonic() >= next_refresh
+            refresh = scheduled or bool(retry_keys)
             try:
-                cycle(refresh)
+                cycle(refresh, only_keys=None if scheduled else retry_keys)
             except Exception:
                 # Never serialize exception text, which may include auth material.
                 print("TokenTV poll failed; retained previous snapshot.", flush=True)
-            if refresh:
+            if scheduled:
                 next_refresh = time.monotonic() + interval
-            preferences.changed.wait(max(0, next_refresh - time.monotonic()))
+            # Check resume every 30s without re-uploading unchanged clock frames.
+            while not stopping.is_set():
+                if preferences.changed.wait(min(30, max(0, next_refresh - time.monotonic()))):
+                    break
+                wall, tick = time.time(), time.monotonic()
+                if tick >= next_refresh or wall-last_wall > 90 or abs((wall-last_wall)-(tick-last_tick)) > 30:
+                    break
+                last_wall, last_tick = wall, tick
 
     thread = threading.Thread(target=poll, daemon=True)
     thread.start()
     try:
-        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, logins)) as server:
+        with ThreadingHTTPServer((args.host, args.port), handler(store, preferences, logins, history,
+                                                              on_retry=preferences.changed.set)) as server:
             print(f"TokenTV live listening at http://{args.host}:{args.port}", flush=True)
             server.serve_forever()
     except KeyboardInterrupt:

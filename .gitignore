@@ -5,6 +5,7 @@ __pycache__/
 /.venv/
 *.egg-info/
 build/
+usage-history.sqlite3*
 
 # Local account state belongs to official CLIs / the Docker volume.
 auth.json
