@@ -7,7 +7,8 @@
  const q = id => document.getElementById('history-' + id);
  const chart = q('chart'), nav = q('navigator'), selection = q('selection');
  const NS = 'http://www.w3.org/2000/svg', DAY = 86400000, LEFT = 58, RIGHT = 66, TOP = 26, BOTTOM = 252;
- let WIDTH = 900, mode = 'day';
+ let WIDTH = 900, mode = 'day', metric = 'increase';
+ const isWeekly = () => metric === 'weekly';
  const stepMs = () => mode === 'hour' ? 3600000 : DAY;
  const defaultSpan = () => mode === 'hour' ? 24 : 14;
  const bucketName = () => mode === 'hour' ? '시간별' : '일별';
@@ -18,6 +19,8 @@
  const finite = value => typeof value === 'number' && Number.isFinite(value);
  const fmt = value => finite(value) ? new Intl.NumberFormat('ko-KR', {maximumFractionDigits:3}).format(value) : '—';
  const amount = value => finite(value) ? fmt(value) + ' %p' : '—';
+ const percent = value => finite(value) ? fmt(value) + ' %' : '—';
+ const increaseDescription = q('description').textContent, increaseDetails = q('details-text').textContent;
  const kstDay = epoch => new Date(epoch * 1000 + 9 * 3600000).toISOString().slice(0,mode === 'hour' ? 16 : 10);
  const timeLabel = epoch => epoch ? new Intl.DateTimeFormat('ko-KR', {timeZone:'Asia/Seoul', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false}).format(new Date(epoch * 1000)) : '아직 없음';
  const resetTime = epoch => new Date(epoch * 1000 + 9 * 3600000).toISOString().slice(0,19).replace('T',' ') + ' KST';
@@ -72,7 +75,7 @@
   if (!marker) return;
   const {series,event} = marker, row = element('div','history-tooltip-row');
   row.style.setProperty('--series-color',series.color);
-  row.append(element('i','history-account-dot'),element('span','',`${series.alias} · 새 주기 사용률 ${fmt(event.used_percent)}% · 수집 누적 ${amount(event.cumulative_pp)}`));
+  row.append(element('i','history-account-dot'),element('span','',`${series.alias} · 새 주기 사용률 ${percent(event.used_percent)}${isWeekly()?'':' · 수집 누적 '+amount(event.cumulative_pp)}`));
   q('tooltip').replaceChildren(element('strong','','주간 한도 리셋 인식 · '+resetTime(event.observed_at)),row);
   q('tooltip').hidden = false;
  }
@@ -95,13 +98,14 @@
  }
  function overview() {
   const nodes=[], series=activeSeries(), width=900/(domainEnd-domainStart);
-  let maximum=1;
-  for(const item of series) for(const point of item.days) maximum=Math.max(maximum,point.used_pp||0);
+  const field=isWeekly()?'weekly_percent':'used_pp';
+  let maximum=isWeekly()?100:1;
+  if(!isWeekly()) for(const item of series) for(const point of item.days) maximum=Math.max(maximum,point[field]||0);
   series.forEach((item,seriesIndex)=>{
    const group=make('g',{style:`--series-color:${item.color}`});
    for(const point of item.days) {
-    if(point.used_pp===null) continue;
-    const height=Math.max(1,point.used_pp/maximum*32), slot=width*.8/series.length;
+    if(!finite(point[field])) continue;
+    const height=Math.max(1,point[field]/maximum*32), slot=width*.8/series.length;
     group.append(make('rect',{x:(ordinal(point.date)-domainStart)*width+width*.1+seriesIndex*slot,
      y:41-height,width:Math.max(.3,slot*.85),height,class:'history-mini-bar'}));
    }
@@ -121,19 +125,30 @@
   q('zoom-in').disabled=span<=1; q('zoom-out').disabled=span>=domainEnd-domainStart;
   updateNavigator();
   q('reset').textContent = mode === 'hour' ? '최근 24시간' : '최근 2주';
+  const weekly=isWeekly();
   q('usage-key').textContent = `막대: ${bucketName()} 사용 · 왼쪽 축`;
+  q('usage-key').parentElement.hidden=weekly;
+  q('line-key').textContent=weekly?'선: 구간의 마지막 주간 사용률':'선: 수집 누적 · 오른쪽 축';
+  q('unit-key').textContent=weekly?'% = 해당 시점 주간 한도의 사용률':'%p = 주간 한도의 퍼센트포인트';
   q('bucket-column').textContent = mode === 'hour' ? '시간 · KST' : '날짜 · KST';
-  q('usage-column').textContent = `${bucketName()} 사용 (%p)`;
+  q('usage-column').textContent = weekly?'주간 사용률 (%)':`${bucketName()} 사용 (%p)`;
+  q('secondary-column').textContent = weekly?'마지막 관측 · KST':'수집 누적 (%p)';
   const stats=data.series.map(series=>{
-   const measured=series.days.filter(point=>point.date>=start&&point.date<=end&&point.used_pp!==null);
+   const measured=series.days.filter(point=>point.date>=start&&point.date<=end&&finite(point[weekly?'weekly_percent':'used_pp']));
+   const latest=measured[measured.length-1];
    const card=element('div','history-account-stat'); card.style.setProperty('--series-color',series.color);
    card.dataset.muted=String(hiddenAccounts.has(series.key));
    const title=element('div','history-account-title'); title.append(element('i','history-account-dot'),element('strong','',series.alias));
    const metrics=element('div','history-account-metrics');
-   for(const [label,value] of [['선택 기간',measured.length?amount(measured.reduce((sum,p)=>sum+p.used_pp,0)):'—'],['수집 누적',amount(series.total_used_pp)]]) {
+   const values=weekly?
+    [['기간 마지막값',percent(latest?.weekly_percent)],['관측 구간',`${measured.length}${bucketUnit()}`]]:
+    [['선택 기간',measured.length?amount(measured.reduce((sum,p)=>sum+p.used_pp,0)):'—'],['수집 누적',amount(series.total_used_pp)]];
+   for(const [label,value] of values) {
     const item=element('div'); item.append(element('span','',label),element('strong','',value)); metrics.append(item);
    }
-   card.append(title,metrics,element('p','history-account-first','첫 관측 '+timeLabel(series.first_observed_at)+' KST'));
+   card.append(title,metrics,element('p','history-account-first',weekly?
+    latest?'마지막값 관측 '+timeLabel(latest.weekly_observed_at)+' KST':'선택 기간의 관측 없음':
+    '첫 관측 '+timeLabel(series.first_observed_at)+' KST'));
    return card;
   });
   q('stats').replaceChildren(...stats);
@@ -141,16 +156,17 @@
   for(const series of visibleSeries) for(const point of series.points) {
    dailyMax=Math.max(dailyMax,point.used_pp||0); cumulativeMax=Math.max(cumulativeMax,point.cumulative_pp||0);
   }
-  dailyMax*=1.12; cumulativeMax*=1.12;
+  dailyMax=weekly?100:dailyMax*1.12; cumulativeMax*=1.12;
   const width=WIDTH-LEFT-RIGHT,cell=width/span,height=BOTTOM-TOP;
-  const nodes=[make('title',{id:'history-chart-title'},`전체 계정의 ${bucketName()} 사용량과 누적 사용량: ${bucketText(start)}부터 ${bucketText(end)}`),
-   make('desc',{id:'history-chart-desc'},`계정별 색상으로 구분합니다. 막대는 왼쪽 축의 ${bucketName()} 사용량, 선은 오른쪽 축의 수집 누적량입니다. 점선은 관측이 없는 구간의 앞뒤 누적값을 연결하며 중간의 시간별 사용량을 뜻하지 않습니다. 다이아몬드는 주간 한도 리셋을 인식한 시점입니다. 마커를 누르거나 초점을 두면 상세 정보를 표시합니다. 계정별 값은 합산하지 않습니다.`)];
-  nodes.push(make('text',{x:LEFT,y:14,class:'history-axis-label'},bucketName()+' %p'),make('text',{x:WIDTH-RIGHT,y:14,'text-anchor':'end',class:'history-axis-label'},'수집 누적 %p'));
+  const nodes=[make('title',{id:'history-chart-title'},`전체 계정의 ${bucketName()} ${weekly?'주간 사용률':'사용량과 누적 사용량'}: ${bucketText(start)}부터 ${bucketText(end)}`),
+   make('desc',{id:'history-chart-desc'},(weekly?'각 시간·날짜의 마지막 정상 관측 주간 사용률을 계정 색상으로 표시합니다. 세로축은 0부터 100%입니다.':'계정별 색상으로 구분합니다. 막대는 왼쪽 축의 '+bucketName()+' 사용량, 선은 오른쪽 축의 수집 누적량입니다.')+' 점선은 관측 누락 구간의 양 끝 확인값을 연결합니다. 중간 시점의 측정값이 아닙니다. 다이아몬드는 주간 한도 리셋을 인식한 시점입니다. 마커를 누르거나 초점을 두면 상세 정보를 표시합니다. 계정별 값은 합산하지 않습니다.')];
+  nodes.push(make('text',{x:LEFT,y:14,class:'history-axis-label'},weekly?'주간 사용률 %':bucketName()+' %p'));
+  if(!weekly) nodes.push(make('text',{x:WIDTH-RIGHT,y:14,'text-anchor':'end',class:'history-axis-label'},'수집 누적 %p'));
   for(let i=0;i<=4;i++) {
    const y=BOTTOM-height*i/4;
    nodes.push(make('line',{x1:LEFT,x2:WIDTH-RIGHT,y1:y,y2:y,class:'history-grid'}),
-    make('text',{x:LEFT-10,y:y+4,'text-anchor':'end',class:'history-tick'},fmt(dailyMax*i/4)),
-    make('text',{x:WIDTH-RIGHT+10,y:y+4,class:'history-tick'},fmt(cumulativeMax*i/4)));
+    make('text',{x:LEFT-10,y:y+4,'text-anchor':'end',class:'history-tick'},fmt(dailyMax*i/4)));
+   if(!weekly) nodes.push(make('text',{x:WIDTH-RIGHT+10,y:y+4,class:'history-tick'},fmt(cumulativeMax*i/4)));
   }
   const every=Math.max(1,Math.ceil(span/Math.max(2,Math.floor(width/75))));
   for(let index=0;index<visible.length;index++) {
@@ -168,14 +184,15 @@
    let path='',gapPath='',previous=null;
    const slot=cell*.72/visibleSeries.length;
    for(let index=0;index<series.points.length;index++) {
-    const point=series.points[index],center=LEFT+(index+.14)*cell+(seriesIndex+.5)*slot;
-    if(point.used_pp!==null) {
+    const point=series.points[index],center=weekly?LEFT+(index+.5)*cell:LEFT+(index+.14)*cell+(seriesIndex+.5)*slot;
+    if(!weekly && point.used_pp!==null) {
      const barHeight=Math.max(1,point.used_pp/dailyMax*height);
      group.append(make('rect',{x:center-slot*.43,y:BOTTOM-barHeight,width:Math.max(.4,slot*.86),height:barHeight,
       class:'history-bar'+(point.partial||point.in_progress?' history-partial':'')}));
     }
-    if(finite(point.cumulative_pp)) {
-     const y=BOTTOM-point.cumulative_pp/cumulativeMax*height;
+    const level=weekly?point.weekly_percent:point.cumulative_pp;
+    if(finite(level)) {
+     const y=BOTTOM-level/(weekly?100:cumulativeMax)*height;
      const gap=previous && index>previous.index+1;
      if(gap) gapPath+=`M${previous.x},${previous.y} L${center},${y} `;
      path+=`${previous&&!gap?'L':'M'}${center},${y} `;
@@ -189,13 +206,14 @@
   });
   for(const series of visibleSeries) for(const event of series.reset_events || []) {
    const tick=resetTick(event);
-   if(!finite(tick) || !finite(event.cumulative_pp) || tick<rangeStart || tick>=rangeEnd) continue;
-   const x=LEFT+(tick-rangeStart)*cell, y=BOTTOM-event.cumulative_pp/cumulativeMax*height;
+   const level=weekly?event.used_percent:event.cumulative_pp;
+   if(!finite(tick) || !finite(level) || tick<rangeStart || tick>=rangeEnd) continue;
+   const x=LEFT+(tick-rangeStart)*cell, y=BOTTOM-level/(weekly?100:cumulativeMax)*height;
    const id=String(resetMarkers.size);
    resetMarkers.set(id,{series,event});
    const group=make('g',{style:`--series-color:${series.color}`,class:'history-reset-marker',
     'data-reset-event':id,tabindex:0,role:'button',
-    'aria-label':`${series.alias} 주간 한도 리셋 인식 ${resetTime(event.observed_at)}, 새 주기 사용률 ${fmt(event.used_percent)}%, 수집 누적 ${amount(event.cumulative_pp)}`});
+    'aria-label':`${series.alias} 주간 한도 리셋 인식 ${resetTime(event.observed_at)}, 새 주기 사용률 ${percent(event.used_percent)}${weekly?'':', 수집 누적 '+amount(event.cumulative_pp)}`});
    group.append(make('line',{x1:x,x2:x,y1:TOP,y2:BOTTOM,class:'history-reset-guide'}),
     make('circle',{cx:x,cy:y,r:13,class:'history-reset-hit'}),
     make('path',{d:`M${x},${y-6} L${x+6},${y} L${x},${y+6} L${x-6},${y} Z`,class:'history-reset-diamond'}));
@@ -211,8 +229,9 @@
     const account=element('td'),badge=element('span','history-table-account'); badge.style.setProperty('--series-color',series.color);
     badge.append(element('i','history-account-dot'),element('span','',series.alias)); account.append(badge);
     row.append(element('td','',bucketText(point.date)),account);
-    const notes=point.observations?`${point.observations}회${point.partial?' · 부분*':''}${point.in_progress?' · 수집 중':''}${point.resets?' · 주간 초기화':''}`:'기록 없음';
-    for(const value of [fmt(point.used_pp),fmt(point.cumulative_pp),notes]) row.append(element('td','',value));
+    const notes=point.observations?`${point.observations}회${!weekly&&point.partial?' · 부분*':''}${point.in_progress?' · 수집 중':''}${point.resets?' · 주간 초기화':''}`:'기록 없음';
+    const values=weekly?[fmt(point.weekly_percent),point.weekly_observed_at?timeLabel(point.weekly_observed_at):'—',notes]:[fmt(point.used_pp),fmt(point.cumulative_pp),notes];
+    for(const value of values) row.append(element('td','',value));
     rows.push(row);
    }
    q('table').replaceChildren(...rows);
@@ -220,7 +239,7 @@
   const firsts=data.series.filter(series=>series.first_observed_at), last=Math.max(0,...data.series.map(series=>series.last_observed_at||0));
   if(failed) q('message').textContent='기록을 새로 불러오지 못했습니다. 마지막으로 받은 데이터를 표시합니다.';
   else if(!firsts.length) q('message').textContent='첫 정상 주간 사용량을 기다립니다. 계정별로 정상 조회된 값부터 기록합니다.';
-  else q('message').textContent=`${visibleSeries.length}개 계정 · ${span}${bucketUnit()} 표시 · ${observedBuckets}${bucketUnit()} 관측 · 리셋 인식 ${resetMarkers.size}회 · 마지막 수집 ${timeLabel(last)} KST · * 부분 기록, 현재 구간은 수집 중`;
+  else q('message').textContent=`${visibleSeries.length}개 계정 · ${span}${bucketUnit()} 표시 · ${observedBuckets}${bucketUnit()} 관측 · 리셋 인식 ${resetMarkers.size}회 · 마지막 수집 ${timeLabel(last)} KST · ${weekly?'각 구간의 마지막 정상 관측값 · 현재 구간은 수집 중':'* 부분 기록, 현재 구간은 수집 중'}`;
   overview();
  }
  async function refresh() {
@@ -248,6 +267,30 @@
    failed=true; if(data) render(); else q('message').textContent='사용량 기록을 불러오지 못했습니다. 잠시 후 다시 시도합니다.';
   }
  }
+ const metricButtons=[...root.querySelectorAll('[data-history-metric]')];
+ function selectMetric(value) {
+  metric=value; root.dataset.metric=metric;
+  for(const button of metricButtons) {
+   const selected=button.dataset.historyMetric===metric;
+   button.setAttribute('aria-selected',String(selected)); button.tabIndex=selected?0:-1;
+   if(selected) q('panel').setAttribute('aria-labelledby',button.id);
+  }
+  q('description').textContent=isWeekly()?
+   '주간 사용률 원본값(0–100%)을 계정 색상으로 비교합니다. 각 시간·날짜의 마지막 정상 관측값을 표시합니다.':increaseDescription;
+  q('details-text').textContent=isWeekly()?
+   '각 시간·날짜의 마지막 정상 관측 주간 사용률(%)을 표시합니다. 예를 들어 같은 시간에 85%에서 87%가 되면 그 시간의 값은 87%입니다. 현재 구간은 마지막 관측까지의 값이며 계속 갱신됩니다. 주간 한도가 초기화되면 사용률도 새 주기 값으로 내려갑니다. 관측이 없는 구간은 표에서 —로 유지하고, 그래프는 앞뒤 확인값을 점선으로 연결합니다. 점선의 중간값은 실제 관측값이 아닙니다. 요약의 기간 마지막값은 선택 기간에서 가장 늦게 관측된 값으로 현재 시점의 사용률과 다를 수 있습니다. 저장된 과거 관측도 표시하며 계정별 사용률을 합산하지 않습니다.':increaseDetails;
+  render();
+ }
+ metricButtons.forEach((button,index)=>{
+  button.addEventListener('click',()=>selectMetric(button.dataset.historyMetric));
+  button.addEventListener('keydown',event=>{
+   const offset={ArrowLeft:-1,ArrowRight:1}[event.key];
+   if(offset===undefined && !['Home','End'].includes(event.key)) return;
+   event.preventDefault();
+   const target=metricButtons[event.key==='Home'?0:event.key==='End'?metricButtons.length-1:(index+offset+metricButtons.length)%metricButtons.length];
+   target.focus(); selectMetric(target.dataset.historyMetric);
+  });
+ });
  for(const button of root.querySelectorAll('[data-history-granularity]')) button.addEventListener('click', () => {
   if(button.dataset.historyGranularity === mode) return;
   mode = button.dataset.historyGranularity;
@@ -331,8 +374,9 @@
    const item = series.points[index], row = element('div', 'history-tooltip-row');
    row.style.setProperty('--series-color', series.color);
    row.append(element('i', 'history-account-dot'), element('span', '', item.observations ?
+    isWeekly()?`${series.alias} · 주간 사용률 ${percent(item.weekly_percent)} · 관측 ${item.weekly_observed_at?resetTime(item.weekly_observed_at):'—'}`:
     `${series.alias} · ${bucketName()} ${amount(item.used_pp)} · 누적 ${amount(item.cumulative_pp)}${item.partial ? ' · 부분*' : ''}` :
-    `${series.alias} · 관측 없음 · 점선은 앞뒤 누적값 연결`));
+    `${series.alias} · 관측 없음 · 점선은 앞뒤 ${isWeekly()?'사용률':'누적값'} 연결`));
    rows.push(row);
   }
   q('tooltip').replaceChildren(...rows);
@@ -347,6 +391,7 @@
   if(event.key==='Escape') q('tooltip').hidden=true;
  });
  chart.addEventListener('pointerleave', () => {q('tooltip').hidden = true});
+ selectMetric(metric);
  refresh();
  setInterval(() => {
   if (!document.hidden && !drag && ![q('start'), q('end')].includes(document.activeElement)) refresh();

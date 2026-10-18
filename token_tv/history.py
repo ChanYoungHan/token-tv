@@ -171,6 +171,7 @@ class UsageHistory:
                                    'used_pp': round(row['used_pp'], 6) if row and row['intervals'] else None,
                                    'cumulative_pp': round(cumulative, 6) if row else None,
                                    'weekly_percent': row['weekly_percent'] if row else None,
+                                   'weekly_observed_at': row['last_at'] if row else None,
                                    'observations': row['observations'] if row else 0,
                                    'partial': bool(row['partial']) if row else False,
                                    'resets': row['resets'] if row else 0,
@@ -180,6 +181,7 @@ class UsageHistory:
                                            datetime.combine(end_day + timedelta(days=1), datetime.min.time(), KST).timestamp(),
                                            before)
         return {'schema': 1, 'timezone': 'Asia/Seoul', 'unit': 'percentage_points', 'granularity': 'day',
+                'weekly_unit': 'percent', 'weekly_aggregation': 'last_successful_observation',
                 'today': today.isoformat(), 'start': start_day.isoformat(), 'end': end_day.isoformat(),
                 'accounts': available, 'account': selected['key'] if selected else None,
                 'first_observed_at': first, 'last_observed_at': last, 'days': points, 'buckets': points,
@@ -229,12 +231,18 @@ class UsageHistory:
                 end_at = (end_hour + timedelta(hours=1)).timestamp()
                 before = db.execute('SELECT COALESCE(SUM(delta_pp),0) FROM observations WHERE account_id=? AND observed_at<?',
                                     (account['id'], start_at)).fetchone()[0]
-                rows = {row['bucket']: row for row in db.execute('''
-                    SELECT CAST(observed_at / 3600 AS INTEGER) AS bucket,
+                rows = {row['bucket']: row for row in db.execute('''WITH readings AS (
+                    SELECT *, CAST(observed_at / 3600 AS INTEGER) AS bucket,
+                        ROW_NUMBER() OVER (PARTITION BY CAST(observed_at / 3600 AS INTEGER)
+                                           ORDER BY observed_at DESC) AS newest
+                    FROM observations WHERE account_id=? AND observed_at>=? AND observed_at<?
+                ) SELECT bucket,
                         COUNT(*) AS observations, COUNT(delta_pp) AS intervals,
                         COALESCE(SUM(delta_pp),0) AS used_pp,
-                        MAX(partial) AS partial, SUM(reset) AS resets
-                    FROM observations WHERE account_id=? AND observed_at>=? AND observed_at<?
+                        MAX(partial) AS partial, SUM(reset) AS resets,
+                        MAX(CASE WHEN newest=1 THEN used_percent END) AS weekly_percent,
+                        MAX(observed_at) AS weekly_observed_at
+                    FROM readings
                     GROUP BY bucket ORDER BY bucket''', (account['id'], start_at, end_at))}
                 cumulative = before
                 for offset in range(count):
@@ -245,6 +253,8 @@ class UsageHistory:
                     points.append({'date': hour.isoformat(timespec='minutes')[:16],
                                    'used_pp': round(row['used_pp'], 6) if row and row['intervals'] else None,
                                    'cumulative_pp': round(cumulative, 6) if row else None,
+                                   'weekly_percent': row['weekly_percent'] if row else None,
+                                   'weekly_observed_at': row['weekly_observed_at'] if row else None,
                                    'observations': row['observations'] if row else 0,
                                    'partial': bool(row['partial']) if row else False,
                                    'resets': row['resets'] if row else 0,

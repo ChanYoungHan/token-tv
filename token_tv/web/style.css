@@ -823,6 +823,9 @@ h1{margin:0;font:600 48px/1.04 var(--font-display);letter-spacing:-.03em;color:v
 .history-table-account{justify-content:flex-end;white-space:nowrap}
 @media(max-width:700px){.history-stats{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.history-stats .history-account-stat .history-account-metrics strong{font-size:18px}.history-all-accounts{font-size:10px}}
 .history-granularity{display:flex;gap:6px;margin:0 0 16px}
+.history-metric-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:20px 0 0;padding-bottom:12px;border-bottom:1px solid var(--line-2)}
+.history-metric-tabs .control{min-width:126px}
+.usage-history .history-metric-tabs .control[aria-selected=true]{background:var(--ink);border-color:var(--ink);color:var(--bg);text-shadow:none}
 .history-granularity .control{min-width:84px}
 .usage-history .history-granularity .control[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--bg);text-shadow:none}
 .history-dates input[type=datetime-local]{width:195px}
