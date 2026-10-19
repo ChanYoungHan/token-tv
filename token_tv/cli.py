@@ -2,6 +2,7 @@
 
     token-tv start     find your signed-in CLIs, ask for the clock, run (the easy way)
     token-tv setup     write a credential-free config (never overwrites one)
+    token-tv add-account append a separate account to an existing config
     token-tv doctor    check CLIs and login files (--live asks each provider)
     token-tv demo      render every clock face with sample data
     token-tv connect   sign an account in with its official CLI
@@ -11,8 +12,10 @@ import argparse
 import io
 import json
 import os
+import re
 import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import urlparse
@@ -148,6 +151,68 @@ def read_config(path):
     except (ValueError, KeyError, TypeError, AttributeError) as error:
         print(f'{path} is not a valid TokenTV config ({error}). Compare it with config.example.json.', file=sys.stderr)
     return None
+
+
+def add_account(args):
+    """Append account metadata with its own CLI home; never open login files.
+
+    Stop the running app before editing its account configuration, then restart.
+    """
+    path = Path(args.config).expanduser().absolute()
+    email = args.email.strip()
+    if not re.fullmatch(r'[^@\s]+@[^@\s]+', email):
+        print('A valid account email is required.', file=sys.stderr)
+        return 1
+    if path.is_symlink():
+        print('Use the actual config path rather than a symbolic link.', file=sys.stderr)
+        return 1
+    config = read_config(path)
+    if config is None:
+        return 1
+    provider = args.provider
+    accounts = config['accounts']
+    peers = [a for a in accounts if a['provider'] == provider]
+    if any(a['email'].strip().casefold() == email.casefold() for a in peers):
+        print('That account is already configured; kept the existing configuration.', file=sys.stderr)
+        return 1
+    if len(peers) >= 3:
+        print(f'At most three {provider} accounts (A, B, C).', file=sys.stderr)
+        return 1
+    used_keys = {a['key'] for a in accounts}
+    used_aliases = {a['alias'] for a in accounts}
+    used_homes = {Path(a['source_home']).expanduser().resolve() for a in accounts if a.get('source_home')}
+    for letter in 'ABC':
+        key, alias = f'{provider}_{letter.lower()}', f'{provider.upper()} {letter}'
+        home = path.parent / 'homes' / key
+        if key not in used_keys and alias not in used_aliases and home.resolve() not in used_homes and not home.exists():
+            break
+    else:
+        print('No unused account slot/home is available; kept the existing configuration.', file=sys.stderr)
+        return 1
+    account = dict(key=key, alias=alias, provider=provider, email=email, source_home=str(home))
+    config = dict(config, accounts=[*accounts, account])
+    temporary = None
+    try:
+        # A unique private file prevents partial writes or a shared .tmp filename.
+        with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, prefix='.account-', suffix='.json', delete=False) as output:
+            temporary = Path(output.name)
+            json.dump(config, output, indent=2)
+            output.write('\n')
+            output.flush()
+            os.fsync(output.fileno())
+        from token_tv.sources import load_config
+        load_config(temporary)
+        temporary.replace(path)
+    except (OSError, ValueError, TypeError):
+        print('Could not save the account configuration.', file=sys.stderr)
+        return 1
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    print(f'Added {alias} ({key}) with a separate login home.')
+    print(f'Next: token-tv connect --config {path} --account {key}')
+    print('Restart TokenTV to load the added account. Existing accounts keep their logins.')
+    return 0
 
 
 def doctor(args):
@@ -329,6 +394,9 @@ def main(argv=None):
                    help='give every account its own login home instead of reusing your existing CLI login')
     s.add_argument('--device-url', help='clock address, e.g. http://192.168.0.50')
     s.add_argument('--yes', action='store_true', help='do not ask; use only the flags given')
+    a = commands.add_parser('add-account', parents=[config], help='append an account with its own CLI home; stop the app first')
+    a.add_argument('--provider', choices=tuple(PROVIDERS), required=True)
+    a.add_argument('--email', required=True, help='expected account email; the next unused A/B/C slot is assigned')
     st = commands.add_parser('start', parents=[config], help='find your signed-in CLIs, ask for the clock, and run')
     st.add_argument('--device-url', help='clock address, e.g. 192.168.0.50')
     st.add_argument('--yes', action='store_true', help='accept every signed-in account without asking')
@@ -359,7 +427,7 @@ def main(argv=None):
     if args.command is None:
         parser.print_help()
         return 0
-    return {'setup': setup, 'doctor': doctor, 'demo': demo, 'start': start}[args.command](args)
+    return {'setup': setup, 'add-account': add_account, 'doctor': doctor, 'demo': demo, 'start': start}[args.command](args)
 
 
 if __name__ == '__main__':

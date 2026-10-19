@@ -1,6 +1,6 @@
 """Four LCD themes that match the web appearances; every reading stays live text.
 
-Each 240×240 frame shows one account per provider in three rows. Fonts are the
+Each 240×240 frame shows up to three accounts, including the same provider. Fonts are the
 bundled web fonts, gauges keep ten 10% cells, and each used-quota band is drawn as
 a two-tone gradient from its start colour to its tip (tokens.css lvl-*-2 → lvl-*).
 """

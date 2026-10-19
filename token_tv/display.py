@@ -44,19 +44,16 @@ def font(size, bold=False, mono=False):
 
 
 def overview_rows(snapshot):
-    """Select one visible account per provider, in configured order, without merging quotas."""
-    rows = []
-    # Show only the services this person set up; with no accounts at all, keep every placeholder row.
-    present = [p for p in PROVIDERS if any(row['provider'] == p for row in snapshot['accounts'].values())]
-    for provider in present or PROVIDERS:
-        accounts = [dict(row, key=key) for key, row in snapshot['accounts'].items()
-                    if row['provider'] == provider]
-        available = [row for row in accounts if row['status'] == 'ok' and row['windows']]
-        previous = [row for row in accounts if row['status'] == 'stale' and row['windows']]
-        rows.append((available or previous or accounts or [
-            {'key': provider, 'provider': provider, 'alias': provider.upper() + ' A',
-             'status': 'auth_required', 'windows': []}])[0])
-    return rows[:3]  # every clock face is laid out for at most three rows
+    """Show the first three configured accounts, including multiple of one service.
+
+    Stable slots retain LOGIN/OLD for the affected account instead of silently
+    replacing it with another identity. The dashboard retains every account.
+    """
+    rows = [dict(row, key=key) for key, row in snapshot['accounts'].items()]
+    if not rows:
+        rows = [{'key': provider, 'provider': provider, 'alias': provider.upper() + ' A',
+                 'status': 'auth_required', 'windows': []} for provider in PROVIDERS]
+    return rows[:3]
 
 
 def row_shift(count, pitch):
@@ -314,7 +311,7 @@ footer{margin-top:24px;border-top:1px solid #303b46;padding-top:16px;color:var(-
 </style>
 <main><header><span class="brand">TOKENTV</span><span class="muted" id="updated">Connecting</span></header>
 <h1>Account usage</h1><div class="layout">
-<section><div class="screen"><img id="frame" width="240" height="240" alt="Live three-provider clock overview" src="/frame/0.jpg"></div>
+<section><div class="screen"><img id="frame" width="240" height="240" alt="Live clock overview of up to three accounts" src="/frame/0.jpg"></div>
 <div class="style-picker" role="group" aria-label="Clock style">
 <button type="button" class="style-button" id="digital" aria-pressed="false">Digital</button>
 <button type="button" class="style-button" id="neon" aria-pressed="false">Neon</button>

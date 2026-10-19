@@ -123,7 +123,7 @@ class LiveTests(unittest.TestCase):
         self.assertGreater(len(image.getcolors(240 * 240)), 20)
         self.assertLess(len(body), 60000)
 
-    def test_overview_keeps_one_account_per_provider_without_losing_details(self):
+    def test_overview_keeps_three_configured_accounts_without_losing_details(self):
         def account(provider, alias, status="ok"):
             return {"provider": provider, "alias": alias, "status": status,
                     "windows": [] if status != "ok" else [{"label": "WEEK", "used_percent": 94, "resets_at": None}]}
@@ -132,7 +132,7 @@ class LiveTests(unittest.TestCase):
             "cc": account("claude", "CLAUDE C"), "xa": account("codex", "CODEX A"),
             "ga": account("grok", "GROK A", "auth_required"), "gb": account("grok", "GROK B")}}
         rows = overview_rows(snapshot)
-        self.assertEqual([r["key"] for r in rows], ["ca", "xa", "gb"])
+        self.assertEqual([r["key"] for r in rows], ["ca", "cb", "cc"])
         self.assertEqual(len(snapshot["accounts"]), 6)
         self.assertEqual(render_page(snapshot, 0), render_page(snapshot, 1))
 

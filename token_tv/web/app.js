@@ -278,6 +278,8 @@ $('#clock-toggle').onclick = () => showClock($('#clock-panel').hidden); $('#clos
 let lastImageStyle = null, lastImageAt = 0;
 function paintClock(forceImage = false) {
  const style = clockChoice || displayInfo?.style;
+ const rows = Object.values(snapshot?.accounts || {});
+ $('#clock-accounts').textContent = rows.length ? 'Clock accounts: ' + rows.slice(0,3).map(a=>a.alias).join(' · ') + (rows.length>3 ? ' · First 3 in configuration order; all accounts remain on the dashboard.' : '') : '';
  $('#clock-style').disabled = applying || !displayInfo; $('#apply').disabled = DEMO || applying || !displayInfo || (style === displayInfo.style && displayInfo.status !== 'error' && !clockError);
  $('#apply').textContent = applying ? 'Sending image…' : 'Apply to clock'; $('#apply').dataset.state = applying ? 'loading' : clockError || displayInfo?.status === 'error' ? 'error' : displayInfo?.status === 'ok' ? 'success' : 'default';
  $('#display-state').textContent = DEMO ? 'Demo · install TokenTV to drive a real clock' : clockError ? 'Could not apply. Please retry.' : !displayInfo ? 'Clock status unavailable' : style !== displayInfo.style ? 'Preview only · Apply to send' : displayInfo.status === 'queued' ? 'Sending image…' : displayInfo.status === 'error' ? 'Clock upload failed. Please retry.' : displayInfo.status === 'preview_only' ? 'Preview only · No clock connected' : 'Image sent · ' + styleName(displayInfo.applied_style);

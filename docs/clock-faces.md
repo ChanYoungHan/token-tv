@@ -8,10 +8,10 @@ The clock only ever receives that picture.
 First set up the repository once, as in the [Game Boy example](../examples/gameboy#run-it-no-clock-no-login-no-fork)
 (clone, then `.venv` with `pip install -e .`). Commands on this page then use `.venv/bin/python` for `python3`.
 Save this as `my_face.py` in the repository root and run `.venv/bin/python my_face.py`.
-It draws one line per provider with the same helpers the built-in faces use, from sample data.
+It draws one line per account (up to three) with the same helpers the built-in faces use, from sample data.
 
 ```python
-"""A tiny clock face: one line per provider. Run: .venv/bin/python my_face.py"""
+"""A tiny clock face: one line per account. Run: .venv/bin/python my_face.py"""
 import time
 
 from token_tv.display import account_label, overview_rows
