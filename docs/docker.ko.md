@@ -46,6 +46,44 @@ docker compose logs --tail=30 token-tv
 호스트에서만 열려면 `TOKEN_TV_BIND_ADDRESS=127.0.0.1`로 실행합니다.
 웹의 Clock display에서 화면을 고르고 Apply to clock을 누릅니다.
 
+## 같은 서비스의 계정 추가 (CODEX B)
+
+한 TokenTV 서비스에서 여러 계정을 조회합니다. 시계는 설정 순서의 첫 3개 **계정**을 표시하므로
+`CLAUDE A / CODEX A / CODEX B` 또는 `CODEX A / CODEX B / CODEX C` 구성이 가능합니다.
+4개 이상의 계정은 웹 대시보드의 서비스별 A/B/C 탭과 사용량 기록에서 확인합니다.
+대시보드 탭 선택은 시계의 표시 순서를 바꾸지 않습니다. 로그인 실패 계정은 해당 행에 LOGIN으로
+남으며, 다른 계정의 사용량으로 대체하지 않습니다. Space 화면도 계정 이름을 표시합니다.
+
+앱을 멈춘 뒤 계정을 추가하고 다시 시작합니다. 추가 명령은 기존 계정·DB·로그인 파일을 유지하고
+새 계정에 전용 CLI 홈을 할당합니다. 이미 등록한 이메일이나 점유된 홈은 재사용하지 않습니다.
+
+```bash
+docker compose stop token-tv
+docker compose run --rm --no-deps token-tv token-tv add-account \
+  --provider codex --email second@example.com
+docker compose up -d --no-build
+```
+
+CODEX A가 있는 구성에는 CODEX B가 추가됩니다. 새 슬롯은 다음 순서로 A/B/C를 사용합니다.
+웹 대시보드의 **CODEX → B → 다시 로그인**으로 **새 계정만** 로그인하거나 다음을 실행합니다.
+
+```bash
+docker compose exec token-tv token-tv connect --account codex_b
+```
+
+계정별 데이터는 `/data/token-tv/homes/codex_a`, `/data/token-tv/homes/codex_b`처럼 분리됩니다.
+새 계정의 과거 사용량은 복원할 수 없으며, 첫 정상 조회부터 해당 계정의 기록을 수집합니다.
+이미지에는 계정 이메일·로그인·DB를 넣지 않고, 실행 시 마운트한 `/data`에 보관합니다.
+
+수동 Public ECR 게시 전에 이미지의 모든 레이어를 검사할 수 있습니다.
+
+```bash
+docker image save token-tv:local -o /tmp/token-tv-image.tar
+python3 scripts/check_public_image.py /tmp/token-tv-image.tar --require-platform linux/amd64
+```
+
+검사는 삭제된 이전 레이어의 인증 파일도 거부합니다. 실행 중 컨테이너를 `docker commit`해 게시하지 않습니다.
+
 ## 웹에서 만료된 계정 다시 연결
 
 인증이 만료되면 계정 카드에 안내와 **다시 로그인** 버튼이 나타납니다.

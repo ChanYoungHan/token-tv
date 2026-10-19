@@ -15,7 +15,7 @@ import time
 
 from PIL import Image, ImageDraw
 
-from token_tv.display import ASSETS, overview_rows, pixel_text, primary_window
+from token_tv.display import ASSETS, account_label, overview_rows, pixel_text, primary_window
 
 SIZE = 240
 FPS = 10
@@ -35,7 +35,7 @@ STARS = ((92, 104, 150), (170, 182, 220), (255, 255, 255))
 BANDS = (((42, 168, 74), (94, 224, 106)), ((143, 201, 58), (211, 232, 74)),
          ((255, 122, 31), (255, 171, 61)), ((214, 43, 60), (255, 90, 95)))
 RADIUS = 20
-BOX = (50, 78)  # bubble plus tag footprint used for spacing
+BOX = (50, 88)  # bubble, account label and tag footprint used for spacing
 EVENTS = ('dash', 'hop', 'spin', 'sparkle', 'shooting_star', 'huddle')
 
 
@@ -81,13 +81,13 @@ def readings(snapshot):
     for row in overview_rows(snapshot):
         value = primary_window(row)
         used = max(0, min(100, value['used_percent'])) if value else None
-        rows.append((row['provider'], used, bool(value) and row['status'] != 'ok'))
+        rows.append((row['provider'], account_label(row), used, bool(value) and row['status'] != 'ok'))
     return rows
 
 
 def seed_for(rows, now=None):
     bucket = int((time.time() if now is None else now) // 1800)
-    key = repr([(p, None if u is None else round(u), old) for p, u, old in rows]) + f'|{bucket}'
+    key = repr([(p, label, None if u is None else round(u), old) for p, label, u, old in rows]) + f'|{bucket}'
     return int(hashlib.sha256(key.encode()).hexdigest()[:12], 16)
 
 
@@ -138,7 +138,7 @@ def positions(t, paths, events):
                     points[b][axis] += shift
         for point in points:
             point[0] = min(max(point[0], 26), 214)
-            point[1] = min(max(point[1], 24), 182)
+            point[1] = min(max(point[1], 34), 182)
     for event in events:  # the dash wraps around the screen and lands back on its path
         if event['kind'] == 'dash' and event['start'] <= t < event['end']:
             p = (t - event['start']) / (event['end'] - event['start'])
@@ -198,11 +198,12 @@ def render_frames(snapshot, now=None):
         points = positions(t, paths, events)
         order = sorted(range(len(rows)), key=lambda i: points[i][1])
         for i in order:
-            provider, used, old = rows[i]
+            provider, label, used, old = rows[i]
             x, y = round(points[i][0]), round(points[i][1])
             mirrored = any(e['kind'] == 'spin' and e['bot'] == i and e['start'] <= t < e['end']
                            and int((t - e['start']) / (e['end'] - e['start']) * 6) % 2 == 1 for e in events)
             bubble(frame, draw, provider, x, y, mirrored)
+            pixel_text(draw, (x - (len(label) * 6 - 1) // 2, y - RADIUS - 10), label, color=TAG)
             tag(draw, x, y, used, old)
             for event in events:
                 if event['kind'] == 'sparkle' and event['bot'] == i and event['start'] <= t < event['end']:

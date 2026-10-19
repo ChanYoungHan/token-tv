@@ -1,14 +1,37 @@
-# Only source files needed by the image enter the build context.
+# Default deny: publish only application source and explicitly named static assets.
 **
 !pyproject.toml
 !README.md
 !LICENSE
 !token_tv/
-!token_tv/**
+!token_tv/**/
+!token_tv/**/*.py
+!token_tv/web/*.html
+!token_tv/web/*.js
+!token_tv/web/*.css
+!token_tv/web/*.ttf
+!token_tv/web/*.woff2
+!token_tv/web/*LICENSE.txt
+!token_tv/assets/*.png
+!token_tv/assets/theme-catalog.json
+!token_tv/assets/theme-votes.json
 !docker/
 !docker/entrypoint.sh
+
+# Explicit exclusions also apply inside the allowed source directories.
+**/.env*
+**/.aws/**
+**/.claude/**
+**/.codex/**
+**/.docker/**
 **/auth.json
 **/.credentials.json
+**/credentials.json
 **/config.json
-**/__pycache__/
+**/.npmrc
+**/.netrc
+**/*.pem
+**/*.key
+**/*.sqlite*
+**/__pycache__/**
 **/*.pyc

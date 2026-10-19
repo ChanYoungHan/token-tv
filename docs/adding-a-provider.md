@@ -19,5 +19,7 @@ own signed-in CLI or a documented API. If it does not, it cannot be added honest
 | `token_tv/web/app.js` | `PROVIDERS`, `COMPANIES`, scene seed |
 | `tests/` | a payload → windows test with sample JSON, never real account data |
 
-Limits: every clock face shows at most three rows. With more than three services configured, the
-first three in `PROVIDERS` order are shown. Missing readings must stay a dash, never 0%.
+Limits: every clock face shows at most three account rows, in configuration order. Several rows
+may belong to the same service (for example CLAUDE A, CODEX A, CODEX B). With more than three
+accounts, the remaining accounts are still available on the dashboard. Missing readings must stay
+a dash, never 0%; an account needing login keeps its own row.

@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 from PIL import Image
-from token_tv.display import STYLES
+from token_tv.display import STYLES, overview_rows
 from token_tv.sample import snapshot
 from token_tv.sources import RPC
 
@@ -111,7 +111,7 @@ def check():
                       "device_url": f"http://127.0.0.1:{clock.server_port}",
                       "accounts": [{"key": key, "alias": data["accounts"][key]["alias"], "provider": provider,
                                     "email": "sample@example.invalid", "snapshot_file": str(sample_path)}
-                                   for key, provider in (("claude_a", "claude"), ("codex_a", "codex"))]}
+                                   for key, provider in (("claude_a", "claude"), ("codex_a", "codex"), ("codex_b", "codex"))]}
             config_path = root / "sample-config.json"
             config_path.write_text(json.dumps(config))
             args = ["token-tv", "run", "--config", str(config_path)]
@@ -133,6 +133,7 @@ def check():
                 else:
                     raise AssertionError("TokenTV did not upload within 30 seconds")
                 assert all(row["status"] == "ok" for row in current["accounts"].values())
+                assert [row['alias'] for row in overview_rows(current)] == ['CLAUDE A', 'CODEX A', 'CODEX B']
                 for path in ("/", "/health", "/frame/0.jpg"):
                     with urlopen(base + path, timeout=3) as response:
                         assert response.status == 200
