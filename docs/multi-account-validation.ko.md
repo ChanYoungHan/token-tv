@@ -45,3 +45,23 @@ token-tv run
 `Image sent`는 로컬 가상 시계로의 전달 결과입니다.
 
 ![CODEX B 실제 조회와 3계정 시계 미리보기](images/codex-b-local-dashboard.jpg)
+
+## 게시 이미지
+
+2026-10-19, Linux AMD64용 이미지를 다음 태그로 게시했습니다.
+빌드는 기능 코드 커밋 `4ea2a3c6537ac6d20ae783e73014d7ce3b2e557a`를 사용했습니다.
+
+```text
+public.ecr.aws/x2l9m6x8/token-tv:multi-account-4ea2a3c
+public.ecr.aws/x2l9m6x8/token-tv:latest
+```
+
+두 태그의 manifest digest:
+
+```text
+sha256:b13caffb89c577c32d58a0753a90c2687310f8b49b33c758e9557233f2dfc2f2
+```
+
+운영 반영 시에는 새 이미지 배포와 기존 설정에 대한 계정 추가가 필요합니다.
+기존 앱을 멈추고 `add-account`로 새 계정만 추가한 뒤 재시작하며, 새 계정은 해당 서버의
+전용 홈에서 로그인합니다. 로컬 테스트 로그인은 로컬 볼륨에만 있으며 이미지로 전송되지 않습니다.
