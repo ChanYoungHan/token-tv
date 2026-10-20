@@ -276,7 +276,40 @@ $('#clock-zone').textContent = new Intl.DateTimeFormat('en-US', {timeZoneName:'s
 function showClock(show) {$('#clock-panel').hidden = !show; $('#clock-toggle').setAttribute('aria-expanded', String(show)); if (show) {refreshDisplay(true); $('#close-clock').focus()} else $('#clock-toggle').focus()}
 $('#clock-toggle').onclick = () => showClock($('#clock-panel').hidden); $('#close-clock').onclick = () => showClock(false);
 let lastImageStyle = null, lastImageAt = 0;
+let clockConnectionBusy = false, clockConnectionError = '', clockAddressDirty = false;
+$('#clock-address').oninput = () => {clockAddressDirty = true; clockConnectionError = ''};
+function paintClockConnection() {
+ const info = displayInfo, pending = info?.status === 'queued';
+ if (!clockAddressDirty && document.activeElement !== $('#clock-address')) $('#clock-address').value = info?.device_url || '';
+ $('#clock-address').disabled = DEMO || clockConnectionBusy;
+ $('#clock-save').disabled = DEMO || clockConnectionBusy || !info;
+ $('#clock-reconnect').disabled = DEMO || clockConnectionBusy || pending || !info?.device_url;
+ $('#clock-reconnect').textContent = pending ? '연결 중…' : '재연결';
+ const errors = {unreachable: '시계가 응답하지 않습니다. 전원·Wi-Fi·IP를 확인한 뒤 재연결하세요.', http_error: '시계가 요청을 거절했습니다. 주소와 시계 상태를 확인한 뒤 재연결하세요.', backup_mismatch: '저장된 설정과 다른 시계 모델입니다. 원래 설정을 보호하기 위해 전송을 중단했습니다.', invalid_response: '시계 응답을 확인할 수 없습니다. 주소와 시계 상태를 확인하세요.'};
+ const state = $('#clock-connection-state');
+ state.textContent = clockConnectionError || (DEMO ? '데모에서는 주소를 변경할 수 없습니다.' : !info ? '연결 상태 확인 중…' : pending ? '시계에 연결하고 이미지를 전송하는 중…' : info.status === 'error' ? errors[info.error_code] || '전송에 실패했습니다. 주소를 확인한 뒤 재연결하세요.' : info.status === 'ok' ? '이미지 전송 완료' : '시계 IP를 저장하면 연결을 시작합니다.');
+ state.dataset.state = clockConnectionError || info?.status === 'error' ? 'error' : info?.status === 'ok' ? 'success' : 'default';
+ const model = {ultra: 'SmallTV-Ultra', sdpro: 'SD_PRO'}[info?.device_model];
+ $('#clock-connection-meta').textContent = [model, info?.last_success_at ? '최근 전송 ' + new Date(info.last_success_at * 1000).toLocaleString() : info?.last_attempt_at ? '최근 시도 ' + new Date(info.last_attempt_at * 1000).toLocaleString() : ''].filter(Boolean).join(' · ');
+ $('#clock-toggle').textContent = info?.status === 'error' ? 'Clock display · 연결 오류' : 'Clock display';
+}
+async function connectClock(save) {
+ if (DEMO || clockConnectionBusy) return;
+ const address = $('#clock-address').value.trim();
+ if (save && !address) {clockConnectionError = '시계 화면에 표시된 IP를 입력해 주세요.'; paintClockConnection(); $('#clock-address').focus(); return}
+ clockConnectionBusy = true; clockConnectionError = ''; paintClockConnection();
+ try {
+  const response = await fetch(save ? '/display/device' : '/display/reconnect', {method: 'POST', headers: {'Content-Type':'application/json', 'X-TokenTV-Request':'1'}, body: JSON.stringify(save ? {device_url: address} : {})});
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message || '연결 요청을 처리하지 못했습니다. 다시 시도해 주세요.');
+  displayInfo = result; clockAddressDirty = false; clockError = false;
+ } catch (error) {clockConnectionError = error instanceof SyntaxError || error instanceof TypeError ? '서버에 연결하지 못했습니다. 다시 시도해 주세요.' : error.message}
+ finally {clockConnectionBusy = false; paintClock()}
+}
+$('#clock-connection').onsubmit = event => {event.preventDefault(); connectClock(true)};
+$('#clock-reconnect').onclick = () => connectClock(false);
 function paintClock(forceImage = false) {
+ paintClockConnection();
  const style = clockChoice || displayInfo?.style;
  const rows = Object.values(snapshot?.accounts || {});
  $('#clock-accounts').textContent = rows.length ? 'Clock accounts: ' + rows.slice(0,3).map(a=>a.alias).join(' · ') + (rows.length>3 ? ' · First 3 in configuration order; all accounts remain on the dashboard.' : '') : '';
