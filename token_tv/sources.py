@@ -112,10 +112,13 @@ class RPC:
 
 def load_config(path):
     data = json.loads(Path(path).read_text())
-    if set(data) - {"accounts", "device_url", "poll_seconds", "font", "display_style"}:
+    if set(data) - {"accounts", "device_url", "poll_seconds", "font", "display_style", "display_backup_key"}:
         raise ValueError("Unsupported configuration field")
     if data.get('display_style', 'pixel') not in STYLES:
         raise ValueError('Unknown display style')
+    backup_key = data.get('display_backup_key')
+    if backup_key is not None and (not isinstance(backup_key, str) or not re.fullmatch(r'[0-9a-f]{16}', backup_key)):
+        raise ValueError('Invalid display backup key')
     seen = set()
     allowed = {"key", "alias", "provider", "source_home", "email", "snapshot_file", "fallback_snapshot_file", "refresh_with_cli",
                "codexbar_command", "codexbar_url", "codexbar_source"}

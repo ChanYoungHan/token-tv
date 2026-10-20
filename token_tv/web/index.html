@@ -60,6 +60,14 @@
     </main>
     <aside id="clock-panel" class="clock-panel" aria-label="Physical clock" hidden>
       <div class="aside-head"><div><p class="eyebrow">Physical display</p><h2>Your clock</h2></div><button class="control icon-control" id="close-clock" type="button" aria-label="Close clock panel">×</button></div>
+      <form id="clock-connection" class="clock-connection">
+        <label for="clock-address">시계 IP 주소</label>
+        <input id="clock-address" class="control" type="text" placeholder="192.168.0.7" autocomplete="off" spellcheck="false" maxlength="256" aria-describedby="clock-address-help">
+        <p id="clock-address-help" class="quiet">시계 화면의 IP를 입력하세요. 주소가 바뀌면 여기서 저장할 수 있습니다.</p>
+        <div class="clock-connection-actions"><button id="clock-save" class="control" type="submit">저장 후 연결</button><button id="clock-reconnect" class="control" type="button">재연결</button></div>
+        <p id="clock-connection-state" role="status" aria-live="polite">연결 상태 확인 중…</p>
+        <p id="clock-connection-meta" class="quiet"></p>
+      </form>
       <div class="device"><div class="lcd"><img id="frame" width="240" height="240" alt="Live clock preview"></div></div>
       <label for="clock-style">Clock style</label>
       <select id="clock-style" class="control"></select>

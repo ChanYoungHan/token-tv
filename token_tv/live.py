@@ -7,6 +7,7 @@ import os
 import sqlite3
 import threading
 import time
+from http.client import HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -47,6 +48,31 @@ def mismatch_message(error, backup_path):
             "restore it, or move that file away so TokenTV saves a new backup.")
 
 
+def normalize_clock_url(value):
+    if not isinstance(value, str) or not value.strip() or len(value) > 256:
+        raise ValueError('Enter the clock IP address')
+    value = value.strip()
+    parsed = urlparse(value if '://' in value else 'http://' + value)
+    if (parsed.scheme != 'http' or parsed.username is not None or parsed.password is not None
+            or parsed.query or parsed.fragment or parsed.path not in ('', '/')):
+        raise ValueError('Use a plain local clock address')
+    address = ipaddress.ip_address(parsed.hostname or '')
+    if (not address.is_private or address.is_loopback or address.is_link_local
+            or address.is_unspecified or address.is_multicast or address.is_reserved):
+        raise ValueError('Use the clock private LAN IP address')
+    port = parsed.port
+    host = '[' + str(address) + ']' if address.version == 6 else str(address)
+    return 'http://' + host + (':' + str(port) if port and port != 80 else '')
+
+
+def display_backup_path(state_dir, config):
+    key = config.get('display_backup_key')
+    if key is not None and (not isinstance(key, str) or len(key) != 16
+                            or any(c not in '0123456789abcdef' for c in key)):
+        raise ValueError('Invalid display backup key')
+    return Path(state_dir) / (f'display-original-{key}.json' if key else 'display-original.json')
+
+
 class DisplayPreferences:
     def __init__(self, config_path, config):
         self.path = Path(config_path)
@@ -54,13 +80,46 @@ class DisplayPreferences:
         self.style = config.get('display_style', 'pixel')
         self.applied_style = None
         self.status = 'queued' if config.get('device_url') else 'preview_only'
+        self.generation = 0
+        self.device_model = None
+        self.error_code = None
+        self.last_attempt_at = None
+        self.last_success_at = None
         self.lock = threading.Lock()
         self.changed = threading.Event()
 
     def snapshot(self):
         with self.lock:
             return {'style': self.style, 'applied_style': self.applied_style,
-                    'status': self.status, 'styles': list(STYLES)}
+                    'status': self.status, 'styles': list(STYLES),
+                    'device_url': self.config.get('device_url'), 'device_model': self.device_model,
+                    'error_code': self.error_code, 'last_attempt_at': self.last_attempt_at,
+                    'last_success_at': self.last_success_at}
+
+    def target(self):
+        with self.lock:
+            return self.generation, self.style, dict(self.config)
+
+    def reconnect(self, device_url=None):
+        normalized = normalize_clock_url(device_url) if device_url is not None else None
+        with self.lock:
+            updated = dict(load_config(self.path))
+            if normalized is not None and normalized != updated.get('device_url'):
+                updated['device_url'] = normalized
+                # Preserve the previous target's original theme/album backup.
+                updated['display_backup_key'] = hashlib.sha256(normalized.encode()).hexdigest()[:16]
+                write_json(self.path, updated)
+            if not updated.get('device_url'):
+                raise ValueError('Set the clock address first')
+            self.config = updated
+            self.generation += 1
+            self.status = 'queued'
+            self.applied_style = None
+            self.device_model = None
+            self.error_code = None
+            self.last_attempt_at = None
+            self.last_success_at = None
+        self.changed.set()
 
     def set_style(self, style):
         if style not in STYLES:
@@ -73,11 +132,79 @@ class DisplayPreferences:
             self.status = 'queued' if self.config.get('device_url') else 'preview_only'
         self.changed.set()
 
-    def delivered(self, style, success):
+    def delivered(self, style, success, generation=None, model=None, error_code=None):
         with self.lock:
+            if generation is not None and generation != self.generation:
+                return
+            self.last_attempt_at = int(time.time())
+            self.device_model = model
+            self.error_code = error_code
             if success:
                 self.applied_style = style
+                self.last_success_at = self.last_attempt_at
             self.status = ('queued' if style != self.style else 'ok' if success else 'error')
+
+
+class ClockPublisher:
+    def __init__(self, preferences, state_dir):
+        self.preferences = preferences
+        self.state_dir = Path(state_dir)
+        self.generation = None
+        self.device = None
+        self.original = None
+        self.active_file = None
+        self.last_upload = None
+
+    def publish(self, snapshot):
+        generation, style, config = self.preferences.target()
+        if generation != self.generation:
+            self.device = self.original = self.active_file = self.last_upload = None
+            self.generation = generation
+        if not config.get('device_url'):
+            return
+        receipts, phase, model = [], 'detect', None
+        try:
+            if self.device is None:
+                self.device = open_display(config['device_url'], strict=True)
+            model = self.device.MODEL
+            # A newer target request may arrive during a slow network call.
+            if generation != self.preferences.target()[0]:
+                return
+            phase = 'backup'
+            if self.original is None:
+                self.original = load_original(self.device, display_backup_path(self.state_dir, config))
+            phase = 'upload'
+            image = render_page(snapshot, 0, style)
+            name = FILES[1] if image[:4] == b'GIF8' else FILES[0]
+            digest = hashlib.sha256(image).hexdigest()
+            if generation != self.preferences.target()[0]:
+                return
+            if (name, digest) != self.last_upload:
+                (self.state_dir / name).write_bytes(image)
+                receipts.append(dict(self.device.upload(name, image), sha256=digest))
+                self.last_upload = (name, digest)
+            if generation != self.preferences.target()[0]:
+                return
+            if self.active_file != name:
+                phase = 'activate'
+                self.device.activate(self.original, name)
+                self.active_file = name
+            receipt = {'at': int(time.time()), 'style': style, 'status': 'ok', 'model': model, 'uploads': receipts}
+            self.preferences.delivered(style, True, generation, model)
+        except (OSError, ValueError, KeyError, TypeError, HTTPException) as error:
+            code = ('backup_mismatch' if isinstance(error, BackupMismatch) else
+                    'http_error' if getattr(error, 'code', None) else
+                    'unreachable' if isinstance(error, (OSError, HTTPException)) else 'invalid_response')
+            receipt = {'at': int(time.time()), 'style': style, 'status': 'error', 'phase': phase,
+                       'error_code': code, 'model': model, 'uploads': receipts,
+                       'http_status': getattr(error, 'code', None)}
+            self.preferences.delivered(style, False, generation, model, code)
+            # Retry detection after failures instead of retaining a guessed model.
+            self.device = self.original = self.active_file = self.last_upload = None
+        if generation == self.preferences.target()[0]:
+            write_json(self.state_dir / 'display-receipt.json', receipt)
+            print(json.dumps({'event': 'clock_publish', **{k: receipt[k] for k in
+                  ('at', 'status', 'model', 'phase', 'error_code', 'http_status') if k in receipt}}), flush=True)
 
 
 def handler(store, preferences=None, logins=None, history=None, on_retry=None):
@@ -172,6 +299,9 @@ def handler(store, preferences=None, logins=None, history=None, on_retry=None):
             self.wfile.write(body)
 
         def do_POST(self):
+            if urlparse(self.path).path in ('/display/device', '/display/reconnect'):
+                self.clock_post()
+                return
             if urlparse(self.path).path.startswith('/accounts/'):
                 self.retry_post()
                 return
@@ -203,6 +333,35 @@ def handler(store, preferences=None, logins=None, history=None, on_retry=None):
                 self.send_error(500, 'Could not save display choice')
                 return
             self.reply(200, json.dumps(preferences.snapshot()).encode())
+
+        def clock_post(self):
+            if not self.auth_origin():
+                return
+            if preferences is None:
+                self.reply(409, b'{"message":"clock_settings_unavailable"}')
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '0'))
+                if (not 0 < length <= 1024 or self.headers.get('Transfer-Encoding')
+                        or self.headers.get('Content-Type', '').split(';')[0] != 'application/json'
+                        or self.headers.get('X-TokenTV-Request') != '1'):
+                    raise ValueError()
+                self.connection.settimeout(10)
+                data = json.loads(self.rfile.read(length))
+                save = urlparse(self.path).path == '/display/device'
+                if not isinstance(data, dict) or set(data) != ({'device_url'} if save else set()):
+                    raise ValueError()
+                if save:
+                    preferences.reconnect(normalize_clock_url(data['device_url']))
+                else:
+                    preferences.reconnect()
+            except (ValueError, UnicodeError, TypeError):
+                self.reply(400, json.dumps({'message': '시계 화면에 표시된 내부망 IP를 입력해 주세요. 예: 192.168.0.7'}).encode())
+                return
+            except OSError:
+                self.reply(500, json.dumps({'message': '주소를 저장하지 못했습니다. 다시 시도해 주세요.'}).encode())
+                return
+            self.reply(202, json.dumps(preferences.snapshot()).encode())
 
         def retry_post(self):
             if not self.auth_origin():
@@ -308,9 +467,9 @@ def main():
     if config.get("font"):
         os.environ["TOKEN_TV_FONT"] = config["font"]
     state_dir = Path(args.state_dir)
-    device = open_display(config["device_url"]) if config.get("device_url") else None
-    backup_path = state_dir / "display-original.json"
+    backup_path = display_backup_path(state_dir, config)
     if args.restore_display:
+        device = open_display(config["device_url"], strict=True) if config.get("device_url") else None
         if not device or not backup_path.is_file():
             parser.error("A display and its original state backup are required")
         original = json.loads(backup_path.read_text())
@@ -337,12 +496,9 @@ def main():
         preferences.changed.set()
 
     logins = LoginManager(config['accounts'], on_success=logged_in, account_locks=store.account_locks)
-    original = None
-    active_file = None
-    last_upload = None
+    publisher = ClockPublisher(preferences, state_dir)
 
     def cycle(refresh=True, only_keys=None):
-        nonlocal original, active_file, last_upload
         if refresh:
             store.refresh(skip_keys=logins.active_keys(), only_keys=only_keys)
         snapshot = store.snapshot()
@@ -351,33 +507,8 @@ def main():
                 history.record(snapshot)
             except (sqlite3.Error, OSError):
                 print('TokenTV history write failed; live readings remain enabled.', flush=True)
-        style = preferences.snapshot()['style']
-        if not args.once and device:
-            receipts = []
-            phase = "backup"
-            try:
-                if original is None:
-                    original = load_original(device, backup_path)
-                phase = "upload"
-                image = render_page(snapshot, 0, style)
-                name = FILES[1] if image[:4] == b"GIF8" else FILES[0]
-                digest = hashlib.sha256(image).hexdigest()
-                if (name, digest) != last_upload:  # identical frames are not rewritten to flash
-                    (state_dir / name).write_bytes(image)
-                    receipts.append(dict(device.upload(name, image), sha256=digest))
-                    last_upload = (name, digest)
-                if active_file != name:
-                    phase = "activate"
-                    device.activate(original, name)
-                    active_file = name
-                write_json(state_dir / "display-receipt.json", {"at": int(time.time()), "style": style, "uploads": receipts})
-                preferences.delivered(style, True)
-            except (OSError, ValueError, KeyError) as error:
-                if isinstance(error, BackupMismatch):
-                    print(mismatch_message(error, backup_path), flush=True)
-                write_json(state_dir / "display-receipt.json", {"at": int(time.time()), "style": style, "status": "error", "phase": phase,
-                           "uploads": receipts, "http_status": getattr(error, "code", None)})
-                preferences.delivered(style, False)
+        if not args.once:
+            publisher.publish(snapshot)
         snapshot['display'] = preferences.snapshot()
         write_json(state_dir / "snapshot.json", snapshot)
         if args.output:

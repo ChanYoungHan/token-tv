@@ -4,6 +4,7 @@ import uuid
 from http.client import HTTPException
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 
 FILES = ("tokentv.jpg", "tokentv.gif")
@@ -135,11 +136,22 @@ class UltraDisplay(PhotoDisplay):
         self.request(f"/set?theme={int(original['theme'])}")
 
 
-def open_display(base_url):
+def open_display(base_url, strict=False):
     display = PhotoDisplay(base_url)
     try:
         _, raw = display.request("/v.json")
         model = json.loads(raw).get("m")
-    except (OSError, ValueError, AttributeError, HTTPException):
-        return display  # model checked once at start; an Ultra offline at launch falls back to SD_PRO until restart
-    return UltraDisplay(base_url) if isinstance(model, str) and model.startswith("SmallTV-Ultra") else display
+    except (OSError, ValueError, AttributeError, HTTPException) as error:
+        if strict:
+            # Older SD_PRO firmware may omit /v.json. Confirm its photo API;
+            # a timeout or invalid response must never select a different model.
+            if isinstance(error, HTTPError) and error.code == 404:
+                display.capture()
+                return display
+            raise
+        return display
+    if isinstance(model, str) and model.startswith("SmallTV-Ultra"):
+        return UltraDisplay(base_url)
+    if strict:
+        display.capture()
+    return display

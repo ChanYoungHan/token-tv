@@ -830,3 +830,11 @@ h1{margin:0;font:600 48px/1.04 var(--font-display);letter-spacing:-.03em;color:v
 .usage-history .history-granularity .control[aria-pressed=true]{background:var(--ink);border-color:var(--ink);color:var(--bg);text-shadow:none}
 .history-dates input[type=datetime-local]{width:195px}
 @media(max-width:700px){.history-dates:has(input[type=datetime-local]){width:100%;align-items:end}.history-dates input[type=datetime-local]{width:100%;max-width:210px}.history-dates:has(input[type=datetime-local]) label{flex:1;min-width:120px}.history-dates:has(input[type=datetime-local])>span{padding-bottom:8px}}
+/* Clock connection controls stay usable on narrow/mobile dashboards. */
+.clock-connection{display:grid;gap:10px;margin:0 0 18px;min-width:0}
+.clock-connection input{width:100%;min-width:0;box-sizing:border-box}
+.clock-connection p{margin:0;line-height:1.5}
+.clock-connection-actions{display:flex;flex-wrap:wrap;gap:8px}
+.clock-connection-actions button{flex:1;white-space:nowrap}
+#clock-connection-state[data-state="error"]{color:var(--danger,#ed7373)}
+#clock-connection-state[data-state="success"]{color:var(--success,#65b98a)}
