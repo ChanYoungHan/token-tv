@@ -8,6 +8,10 @@
 
 ## 요금제 구분
 
+![Pro에서 Max 20x로 변경된 예시 기록](images/subscription-history.png)
+
+위 화면은 기능 설명용 합성 데이터입니다.
+
 Claude 계정은 OAuth 프로필에서 확인한 **Pro / Max 5x / Max 20x / Team / Enterprise**를
 계정 카드와 그래프 범례에 표시합니다. Max만 확인되고 배수를 확인하지 못하면 `Max`,
 정보가 없으면 `요금제 미확인`으로 표시합니다. 수동으로 실제 한도를 바꾸지는 않습니다.
