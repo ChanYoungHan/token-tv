@@ -105,6 +105,8 @@ class UsageStore:
                     row["error_code"] = row.get("error_code", row["status"])
                     row["status"] = "stale"
                     row["windows"] = previous["windows"]
+                    if 'subscription' in previous:
+                        row['subscription'] = previous['subscription']
                     row["last_success_at"] = previous["last_success_at"]
                     row["identity_verified"] = previous.get("identity_verified", False)
                 self.rows[row["key"]] = row

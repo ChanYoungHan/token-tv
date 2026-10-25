@@ -20,6 +20,9 @@
  const fmt = value => finite(value) ? new Intl.NumberFormat('ko-KR', {maximumFractionDigits:3}).format(value) : '—';
  const amount = value => finite(value) ? fmt(value) + ' %p' : '—';
  const percent = value => finite(value) ? fmt(value) + ' %' : '—';
+ const planLabel = item => item?.subscription?.label || '요금제 미확인';
+ const planSuffix = (series, point) => series.provider === 'claude' ? ' · ' + planLabel(point) : '';
+ const accountLabel = series => series.alias + (series.provider === 'claude' ? ' · ' + planLabel(series) : '');
  const increaseDescription = q('description').textContent, increaseDetails = q('details-text').textContent;
  const kstDay = epoch => new Date(epoch * 1000 + 9 * 3600000).toISOString().slice(0,mode === 'hour' ? 16 : 10);
  const timeLabel = epoch => epoch ? new Intl.DateTimeFormat('ko-KR', {timeZone:'Asia/Seoul', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false}).format(new Date(epoch * 1000)) : '아직 없음';
@@ -75,6 +78,12 @@
   if (!marker) return;
   const {series,event} = marker, row = element('div','history-tooltip-row');
   row.style.setProperty('--series-color',series.color);
+  if (event.from) {
+   row.append(element('i','history-account-dot'),element('span','',`${series.alias} · ${event.from.label} → ${event.to.label} · 주간 사용률 ${percent(event.used_percent)}`));
+   q('tooltip').replaceChildren(element('strong','','요금제 변경 인식 · '+resetTime(event.observed_at)),row,
+    element('p','','변경 시점은 새 기준점입니다. 전후 차이는 사용량이나 리셋으로 집계하지 않습니다.'));
+   q('tooltip').hidden=false; return;
+  }
   row.append(element('i','history-account-dot'),element('span','',`${series.alias} · 새 주기 사용률 ${percent(event.used_percent)}${isWeekly()?'':' · 수집 누적 '+amount(event.cumulative_pp)}`));
   q('tooltip').replaceChildren(element('strong','','주간 한도 리셋 인식 · '+resetTime(event.observed_at)),row);
   q('tooltip').hidden = false;
@@ -84,8 +93,8 @@
    const button=element('button','history-account-toggle'); button.type='button'; button.dataset.key=series.key;
    button.style.setProperty('--series-color',series.color);
    button.setAttribute('aria-pressed',String(!hiddenAccounts.has(series.key)));
-   button.setAttribute('aria-label',series.alias+' 그래프 표시');
-   button.append(element('i','history-account-dot'),element('span','',series.alias));
+   button.setAttribute('aria-label',accountLabel(series)+' 그래프 표시');
+   button.append(element('i','history-account-dot'),element('span','',accountLabel(series)));
    button.addEventListener('click',()=>{
     if(hiddenAccounts.has(series.key)) hiddenAccounts.delete(series.key);
     else if(activeSeries().length>1) hiddenAccounts.add(series.key);
@@ -138,7 +147,7 @@
    const latest=measured[measured.length-1];
    const card=element('div','history-account-stat'); card.style.setProperty('--series-color',series.color);
    card.dataset.muted=String(hiddenAccounts.has(series.key));
-   const title=element('div','history-account-title'); title.append(element('i','history-account-dot'),element('strong','',series.alias));
+   const title=element('div','history-account-title'); title.append(element('i','history-account-dot'),element('strong','',accountLabel(series)));
    const metrics=element('div','history-account-metrics');
    const values=weekly?
     [['기간 마지막값',percent(latest?.weekly_percent)],['관측 구간',`${measured.length}${bucketUnit()}`]]:
@@ -159,7 +168,7 @@
   dailyMax=weekly?100:dailyMax*1.12; cumulativeMax*=1.12;
   const width=WIDTH-LEFT-RIGHT,cell=width/span,height=BOTTOM-TOP;
   const nodes=[make('title',{id:'history-chart-title'},`전체 계정의 ${bucketName()} ${weekly?'주간 사용률':'사용량과 누적 사용량'}: ${bucketText(start)}부터 ${bucketText(end)}`),
-   make('desc',{id:'history-chart-desc'},(weekly?'각 시간·날짜의 마지막 정상 관측 주간 사용률을 계정 색상으로 표시합니다. 세로축은 0부터 100%입니다.':'계정별 색상으로 구분합니다. 막대는 왼쪽 축의 '+bucketName()+' 사용량, 선은 오른쪽 축의 수집 누적량입니다.')+' 점선은 관측 누락 구간의 양 끝 확인값을 연결합니다. 중간 시점의 측정값이 아닙니다. 다이아몬드는 주간 한도 리셋을 인식한 시점입니다. 마커를 누르거나 초점을 두면 상세 정보를 표시합니다. 계정별 값은 합산하지 않습니다.')];
+   make('desc',{id:'history-chart-desc'},(weekly?'각 시간·날짜의 마지막 정상 관측 주간 사용률을 계정 색상으로 표시합니다. 세로축은 0부터 100%입니다.':'계정별 색상으로 구분합니다. 막대는 왼쪽 축의 '+bucketName()+' 사용량, 선은 오른쪽 축의 수집 누적량입니다.')+' 점선은 관측 누락 구간의 양 끝 확인값을 연결합니다. 중간 시점의 측정값이 아닙니다. 다이아몬드는 주간 한도 리셋, 사각형은 요금제 변경을 인식한 시점입니다. 요금제가 달라진 주간 사용률은 선으로 잇지 않습니다. 마커를 누르거나 초점을 두면 상세 정보를 표시합니다. 계정별 값은 합산하지 않습니다.')];
   nodes.push(make('text',{x:LEFT,y:14,class:'history-axis-label'},weekly?'주간 사용률 %':bucketName()+' %p'));
   if(!weekly) nodes.push(make('text',{x:WIDTH-RIGHT,y:14,'text-anchor':'end',class:'history-axis-label'},'수집 누적 %p'));
   for(let i=0;i<=4;i++) {
@@ -194,9 +203,11 @@
     if(finite(level)) {
      const y=BOTTOM-level/(weekly?100:cumulativeMax)*height;
      const gap=previous && index>previous.index+1;
-     if(gap) gapPath+=`M${previous.x},${previous.y} L${center},${y} `;
-     path+=`${previous&&!gap?'L':'M'}${center},${y} `;
-     previous={index,x:center,y};
+     const changed=weekly && previous && ((point.subscription?.id || null)!==previous.plan ||
+      (series.plan_events || []).some(event=>event.observed_at>previous.observed && event.observed_at<=point.weekly_observed_at));
+     if(gap&&!changed) gapPath+=`M${previous.x},${previous.y} L${center},${y} `;
+     path+=`${previous&&!gap&&!changed?'L':'M'}${center},${y} `;
+     previous={index,x:center,y,plan:point.subscription?.id || null,observed:point.weekly_observed_at};
      group.append(make('circle',{cx:center,cy:y,r:span>100?1.8:3.5,class:'history-point'}));
     }
    }
@@ -219,6 +230,19 @@
     make('path',{d:`M${x},${y-6} L${x+6},${y} L${x},${y+6} L${x-6},${y} Z`,class:'history-reset-diamond'}));
    nodes.push(group);
   }
+  for(const series of visibleSeries) for(const event of series.plan_events || []) {
+   const tick=resetTick(event);
+   if(!finite(tick)||tick<rangeStart||tick>=rangeEnd) continue;
+   const x=LEFT+(tick-rangeStart)*cell, y=weekly?BOTTOM-event.used_percent/100*height:TOP+9;
+   const id=String(resetMarkers.size); resetMarkers.set(id,{series,event});
+   const group=make('g',{style:`--series-color:${series.color}`,class:'history-reset-marker history-plan-marker',
+    'data-reset-event':id,tabindex:0,role:'button',
+    'aria-label':`${series.alias} 요금제 변경 인식 ${resetTime(event.observed_at)}, ${event.from.label}에서 ${event.to.label}`});
+   group.append(make('line',{x1:x,x2:x,y1:TOP,y2:BOTTOM,class:'history-reset-guide'}),
+    make('circle',{cx:x,cy:y,r:13,class:'history-reset-hit'}),
+    make('rect',{x:x-6,y:y-6,width:12,height:12,class:'history-reset-diamond'}));
+   nodes.push(group);
+  }
   if(!observedBuckets) nodes.push(make('text',{x:WIDTH/2,y:136,'text-anchor':'middle',class:'history-empty'},'이 기간에 수집된 기록이 없습니다'));
   chart.replaceChildren(...nodes);
   if(!drag) {
@@ -227,9 +251,9 @@
     const point=series.points[index]; if(!point) continue;
     const row=element('tr');
     const account=element('td'),badge=element('span','history-table-account'); badge.style.setProperty('--series-color',series.color);
-    badge.append(element('i','history-account-dot'),element('span','',series.alias)); account.append(badge);
+    badge.append(element('i','history-account-dot'),element('span','',series.alias+(series.provider==='claude'?' · '+planLabel(point):''))); account.append(badge);
     row.append(element('td','',bucketText(point.date)),account);
-    const notes=point.observations?`${point.observations}회${!weekly&&point.partial?' · 부분*':''}${point.in_progress?' · 수집 중':''}${point.resets?' · 주간 초기화':''}`:'기록 없음';
+    const notes=point.observations?`${point.observations}회${!weekly&&point.partial?' · 부분*':''}${point.in_progress?' · 수집 중':''}${point.resets?' · 주간 초기화':''}${point.plan_changes?' · 요금제 변경':''}`:'기록 없음';
     const values=weekly?[fmt(point.weekly_percent),point.weekly_observed_at?timeLabel(point.weekly_observed_at):'—',notes]:[fmt(point.used_pp),fmt(point.cumulative_pp),notes];
     for(const value of values) row.append(element('td','',value));
     rows.push(row);
@@ -239,7 +263,7 @@
   const firsts=data.series.filter(series=>series.first_observed_at), last=Math.max(0,...data.series.map(series=>series.last_observed_at||0));
   if(failed) q('message').textContent='기록을 새로 불러오지 못했습니다. 마지막으로 받은 데이터를 표시합니다.';
   else if(!firsts.length) q('message').textContent='첫 정상 주간 사용량을 기다립니다. 계정별로 정상 조회된 값부터 기록합니다.';
-  else q('message').textContent=`${visibleSeries.length}개 계정 · ${span}${bucketUnit()} 표시 · ${observedBuckets}${bucketUnit()} 관측 · 리셋 인식 ${resetMarkers.size}회 · 마지막 수집 ${timeLabel(last)} KST · ${weekly?'각 구간의 마지막 정상 관측값 · 현재 구간은 수집 중':'* 부분 기록, 현재 구간은 수집 중'}`;
+  else q('message').textContent=`${visibleSeries.length}개 계정 · ${span}${bucketUnit()} 표시 · ${observedBuckets}${bucketUnit()} 관측 · 리셋·요금제 변경 마커 ${resetMarkers.size}개 · 마지막 수집 ${timeLabel(last)} KST · ${weekly?'각 구간의 마지막 정상 관측값 · 현재 구간은 수집 중':'* 부분 기록, 현재 구간은 수집 중'}`;
   overview();
  }
  async function refresh() {
@@ -374,8 +398,8 @@
    const item = series.points[index], row = element('div', 'history-tooltip-row');
    row.style.setProperty('--series-color', series.color);
    row.append(element('i', 'history-account-dot'), element('span', '', item.observations ?
-    isWeekly()?`${series.alias} · 주간 사용률 ${percent(item.weekly_percent)} · 관측 ${item.weekly_observed_at?resetTime(item.weekly_observed_at):'—'}`:
-    `${series.alias} · ${bucketName()} ${amount(item.used_pp)} · 누적 ${amount(item.cumulative_pp)}${item.partial ? ' · 부분*' : ''}` :
+    isWeekly()?`${series.alias}${planSuffix(series,item)} · 주간 사용률 ${percent(item.weekly_percent)} · 관측 ${item.weekly_observed_at?resetTime(item.weekly_observed_at):'—'}`:
+    `${series.alias}${planSuffix(series,item)} · ${bucketName()} ${amount(item.used_pp)} · 누적 ${amount(item.cumulative_pp)}${item.partial ? ' · 부분*' : ''}` :
     `${series.alias} · 관측 없음 · 점선은 앞뒤 ${isWeekly()?'사용률':'누적값'} 연결`));
    rows.push(row);
   }

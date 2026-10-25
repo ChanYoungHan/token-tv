@@ -8,6 +8,7 @@ import time
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from token_tv.subscription import plan_id, metadata
 
 
 KST = timezone(timedelta(hours=9))
@@ -39,7 +40,7 @@ class UsageHistory:
         os.chmod(self.path, 0o600)
         with self.lock, self.connection() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2):
                 raise ValueError('Unsupported history database version')
             db.execute('PRAGMA journal_mode=WAL')
             db.executescript('''
@@ -58,8 +59,13 @@ class UsageHistory:
                     partial INTEGER NOT NULL, resets INTEGER NOT NULL,
                     PRIMARY KEY (account_id, day)
                 );
-                PRAGMA user_version=1;
             ''')
+            db.execute('BEGIN IMMEDIATE')
+            version = db.execute('PRAGMA user_version').fetchone()[0]
+            if version < 2:
+                db.execute('ALTER TABLE observations ADD COLUMN plan TEXT')
+                db.execute('ALTER TABLE observations ADD COLUMN previous_plan TEXT')
+                db.execute('PRAGMA user_version=2')
 
     @contextmanager
     def connection(self):
@@ -86,6 +92,8 @@ class UsageHistory:
                 if not weekly or not number(weekly.get('used_percent')) or not 0 <= weekly['used_percent'] <= 100:
                     continue
                 value = float(weekly['used_percent'])
+                subscription = row.get('subscription')
+                plan = plan_id(subscription.get('id')) if isinstance(subscription, dict) else None
                 reset = weekly.get('resets_at')
                 reset = float(reset) if number(reset) and reset > 0 else None
                 previous = db.execute('SELECT * FROM observations WHERE account_id=? ORDER BY observed_at DESC LIMIT 1',
@@ -93,6 +101,7 @@ class UsageHistory:
                 if previous and observed <= previous['observed_at']:
                     continue
                 delta, high, partial, restarted = None, value, 1, 0
+                previous_plan = None
                 if previous:
                     elapsed = observed - previous['observed_at']
                     old_reset = previous['resets_at']
@@ -114,9 +123,28 @@ class UsageHistory:
                     # A long gap spanning multiple dates cannot be assigned to one day.
                     if elapsed > self.gap_seconds and day_at(observed) != previous['day']:
                         delta, partial = None, 1
+                    # Never subtract readings whose quota denominators may differ.
+                    if plan != previous['plan']:
+                        delta, high, partial, restarted = None, value, 1, 0
+                    known = db.execute('''SELECT plan FROM observations WHERE account_id=? AND plan IS NOT NULL
+                                          ORDER BY observed_at DESC LIMIT 1''', (account['id'],)).fetchone()
+                    old_plan = known['plan'] if known else None
+                    if old_plan == 'max' and plan in ('max_5x', 'max_20x'):
+                        precise = db.execute('''SELECT plan FROM observations WHERE account_id=?
+                            AND plan IS NOT NULL AND plan!='max' ORDER BY observed_at DESC LIMIT 1''',
+                            (account['id'],)).fetchone()
+                        if precise and precise['plan'] in ('max_5x', 'max_20x'):
+                            old_plan = precise['plan']
+                    refinement = 'max' in (old_plan, plan) and all(
+                        p in ('max', 'max_5x', 'max_20x') for p in (old_plan, plan))
+                    if old_plan and plan and old_plan != plan and not refinement:
+                        previous_plan = old_plan
+                        delta, high, partial, restarted = None, value, 1, 0
                 day = day_at(observed)
-                db.execute('INSERT INTO observations VALUES (?,?,?,?,?,?,?,?,?)',
-                           (account['id'], observed, day, value, reset, high, delta, partial, restarted))
+                db.execute('''INSERT INTO observations
+                           (account_id,observed_at,day,used_percent,resets_at,high_water,delta_pp,partial,reset,plan,previous_plan)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
+                           (account['id'], observed, day, value, reset, high, delta, partial, restarted, plan, previous_plan))
                 db.execute('''INSERT INTO daily_usage VALUES (?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(account_id,day) DO UPDATE SET
                         observations=observations+1, intervals=intervals+excluded.intervals,
@@ -146,9 +174,12 @@ class UsageHistory:
                                     (account['id'],)).fetchone()
                 available.append({k: account[k] for k in ('key', 'alias', 'provider')} |
                                  {'first_observed_at': bounds[0], 'last_observed_at': bounds[1]})
+                latest = db.execute('SELECT plan FROM observations WHERE account_id=? ORDER BY observed_at DESC LIMIT 1',
+                                    (account['id'],)).fetchone()
+                available[-1]['subscription'] = metadata(latest['plan'] if latest else None)
             selected = self.accounts.get(key) if key else next((self.accounts[a['key']] for a in available if a['first_observed_at']),
                                                              next(iter(self.accounts.values()), None))
-            points, events, before, total, first, last = [], [], 0, None, None, None
+            points, events, plan_events, before, total, first, last = [], [], [], 0, None, None, None
             if selected:
                 account_id = selected['id']
                 before = db.execute('SELECT COALESCE(SUM(used_pp),0) FROM daily_usage WHERE account_id=? AND day<?',
@@ -180,16 +211,46 @@ class UsageHistory:
                                            datetime.combine(start_day, datetime.min.time(), KST).timestamp(),
                                            datetime.combine(end_day + timedelta(days=1), datetime.min.time(), KST).timestamp(),
                                            before)
+                plan_events = self.plan_events(db, account_id,
+                    datetime.combine(start_day, datetime.min.time(), KST).timestamp(),
+                    datetime.combine(end_day + timedelta(days=1), datetime.min.time(), KST).timestamp())
+                self.annotate_plans(db, account_id, points, plan_events)
         return {'schema': 1, 'timezone': 'Asia/Seoul', 'unit': 'percentage_points', 'granularity': 'day',
                 'weekly_unit': 'percent', 'weekly_aggregation': 'last_successful_observation',
                 'today': today.isoformat(), 'start': start_day.isoformat(), 'end': end_day.isoformat(),
                 'accounts': available, 'account': selected['key'] if selected else None,
                 'first_observed_at': first, 'last_observed_at': last, 'days': points, 'buckets': points,
                 'reset_events': events,
+                'plan_events': plan_events,
                 'range_used_pp': (round(sum(p['used_pp'] or 0 for p in points), 6)
                                   if any(p['used_pp'] is not None for p in points) else None),
                 'total_used_pp': round(total, 6) if total is not None else None,
                 'before_range_pp': round(before, 6)}
+
+    @staticmethod
+    def plan_events(db, account_id, start_at, end_at):
+        return [{'observed_at': row['observed_at'], 'used_percent': row['used_percent'],
+                 'from': metadata(row['previous_plan']), 'to': metadata(row['plan'])}
+                for row in db.execute('''SELECT observed_at,used_percent,previous_plan,plan FROM observations
+                    WHERE account_id=? AND observed_at>=? AND observed_at<? AND previous_plan IS NOT NULL
+                    ORDER BY observed_at''', (account_id, start_at, end_at))]
+
+    @staticmethod
+    def annotate_plans(db, account_id, points, events):
+        # Every bucket uses the plan of its last observation, never today's plan.
+        readings = {}
+        times = [p['weekly_observed_at'] for p in points if p['weekly_observed_at']]
+        for offset in range(0, len(times), 400):
+            batch = times[offset:offset + 400]
+            placeholders = ','.join('?' for _ in batch)
+            readings.update((row['observed_at'], row['plan']) for row in db.execute(
+                f'SELECT observed_at,plan FROM observations WHERE account_id=? AND observed_at IN ({placeholders})',
+                (account_id, *batch)))
+        for point in points:
+            point['subscription'] = metadata(readings.get(point['weekly_observed_at']))
+            point['plan_changes'] = sum(day_at(e['observed_at']) == point['date'] if len(point['date']) == 10 else
+                datetime.fromtimestamp(e['observed_at'], KST).isoformat(timespec='minutes')[:13] == point['date'][:13]
+                for e in events)
 
     @staticmethod
     def reset_events(db, account_id, start_at, end_at, before):
@@ -221,7 +282,7 @@ class UsageHistory:
         count = int((end_hour - start_hour).total_seconds() / 3600) + 1
         if not 1 <= count <= MAX_HOURS or end_hour > current:
             raise ValueError('Choose 1 to 2160 hours ending no later than the current hour')
-        points, events, before = [], [], 0
+        points, events, plan_events, before = [], [], [], 0
         with self.lock, self.connection() as db:
             # Keep metadata, all-time totals and hourly readings in one locked snapshot.
             result = self.query(key, current.date().isoformat(), current.date().isoformat())
@@ -260,10 +321,13 @@ class UsageHistory:
                                    'resets': row['resets'] if row else 0,
                                    'in_progress': hour == current})
                 events = self.reset_events(db, account['id'], start_at, end_at, before)
+                plan_events = self.plan_events(db, account['id'], start_at, end_at)
+                self.annotate_plans(db, account['id'], points, plan_events)
         result.pop('days', None)
         result.update(granularity='hour', start=start_hour.isoformat(timespec='minutes')[:16],
                       end=end_hour.isoformat(timespec='minutes')[:16], hours=points, buckets=points,
                       reset_events=events,
+                      plan_events=plan_events,
                       before_range_pp=round(before, 6),
                       range_used_pp=(round(sum(p['used_pp'] or 0 for p in points), 6)
                                      if any(p['used_pp'] is not None for p in points) else None))
