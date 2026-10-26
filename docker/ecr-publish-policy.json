@@ -1,0 +1,25 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RegistryAuthentication",
+      "Effect": "Allow",
+      "Action": ["ecr-public:GetAuthorizationToken", "sts:GetServiceBearerToken"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PublishTokenTVOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ecr-public:BatchCheckLayerAvailability",
+        "ecr-public:InitiateLayerUpload",
+        "ecr-public:UploadLayerPart",
+        "ecr-public:CompleteLayerUpload",
+        "ecr-public:PutImage",
+        "ecr-public:DescribeImages",
+        "ecr-public:DescribeImageTags"
+      ],
+      "Resource": "arn:aws:ecr-public::772326922092:repository/token-tv"
+    }
+  ]
+}
