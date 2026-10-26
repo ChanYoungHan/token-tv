@@ -1,7 +1,24 @@
 """Public plan metadata only; never persist the OAuth profile or credentials."""
 
 LABELS = {'pro': 'Pro', 'max': 'Max', 'max_5x': 'Max 5x', 'max_20x': 'Max 20x',
-          'team': 'Team', 'enterprise': 'Enterprise'}
+          'team': 'Team', 'enterprise': 'Enterprise', 'free': 'Free', 'go': 'Go',
+          'plus': 'Plus', 'prolite': 'Pro Lite', 'promax': 'Pro Max', 'business': 'Business',
+          'edu': 'Edu', 'edu_plus': 'Edu Plus', 'edu_pro': 'Edu Pro',
+          'self_serve_business_prolite': 'Business (Pro Lite)',
+          'self_serve_business_usage_based': 'Business (사용량 기반)',
+          'enterprise_cbp_automation': 'Enterprise (자동화)',
+          'enterprise_cbp_usage_based': 'Enterprise (사용량 기반)'}
+
+CODEX_PLANS = frozenset(LABELS) - {'max', 'max_5x', 'max_20x'}
+
+
+def codex_subscription(account, limits=None):
+    """Prefer the verified account; a same-account quota response is a fallback."""
+    for source in (account, limits):
+        value = source.get('planType') if isinstance(source, dict) else None
+        if isinstance(value, str) and value in CODEX_PLANS:
+            return metadata(value)
+    return metadata(None)
 
 
 def plan_id(value):

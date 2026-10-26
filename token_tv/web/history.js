@@ -21,8 +21,8 @@
  const amount = value => finite(value) ? fmt(value) + ' %p' : '—';
  const percent = value => finite(value) ? fmt(value) + ' %' : '—';
  const planLabel = item => item?.subscription?.label || '요금제 미확인';
- const planSuffix = (series, point) => series.provider === 'claude' ? ' · ' + planLabel(point) : '';
- const accountLabel = series => series.alias + (series.provider === 'claude' ? ' · ' + planLabel(series) : '');
+ const planSuffix = (series, point) => ['claude','codex'].includes(series.provider) ? ' · ' + planLabel(point) : '';
+ const accountLabel = series => series.alias + planSuffix(series,series);
  const increaseDescription = q('description').textContent, increaseDetails = q('details-text').textContent;
  const kstDay = epoch => new Date(epoch * 1000 + 9 * 3600000).toISOString().slice(0,mode === 'hour' ? 16 : 10);
  const timeLabel = epoch => epoch ? new Intl.DateTimeFormat('ko-KR', {timeZone:'Asia/Seoul', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false}).format(new Date(epoch * 1000)) : '아직 없음';
@@ -251,7 +251,7 @@
     const point=series.points[index]; if(!point) continue;
     const row=element('tr');
     const account=element('td'),badge=element('span','history-table-account'); badge.style.setProperty('--series-color',series.color);
-    badge.append(element('i','history-account-dot'),element('span','',series.alias+(series.provider==='claude'?' · '+planLabel(point):''))); account.append(badge);
+    badge.append(element('i','history-account-dot'),element('span','',series.alias+planSuffix(series,point))); account.append(badge);
     row.append(element('td','',bucketText(point.date)),account);
     const notes=point.observations?`${point.observations}회${!weekly&&point.partial?' · 부분*':''}${point.in_progress?' · 수집 중':''}${point.resets?' · 주간 초기화':''}${point.plan_changes?' · 요금제 변경':''}`:'기록 없음';
     const values=weekly?[fmt(point.weekly_percent),point.weekly_observed_at?timeLabel(point.weekly_observed_at):'—',notes]:[fmt(point.used_pp),fmt(point.cumulative_pp),notes];

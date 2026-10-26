@@ -4,11 +4,11 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from token_tv.history import UsageHistory, KST, day_at
 from token_tv.sources import fetch_account
-from token_tv.subscription import claude_subscription, metadata
+from token_tv.subscription import claude_subscription, codex_subscription, metadata
 
 
 ACCOUNT = {'key': 'claude_a', 'alias': 'CLAUDE A', 'provider': 'claude', 'email': 'a@example.invalid'}
@@ -40,6 +40,44 @@ class SubscriptionTests(unittest.TestCase):
             row=fetch_account(ACCOUNT)
         self.assertNotIn('subscription',row)
         self.assertEqual(row['status'],'identity_mismatch')
+
+
+    def test_codex_plan_types_and_same_account_fallback(self):
+        for value in ('free','go','plus','pro','prolite','promax','team','business','enterprise','edu'):
+            self.assertEqual(codex_subscription({'planType':value}),metadata(value))
+        self.assertEqual(codex_subscription({'planType':'plus'},{'planType':'pro'}),metadata('plus'))
+        self.assertEqual(codex_subscription({'planType':'unknown'},{'planType':'pro'}),metadata('pro'))
+        for value in (None,[],{},'unknown','future_plan','max_20x'):
+            self.assertEqual(codex_subscription({'planType':value}),metadata(None))
+
+    def test_codex_rpc_verifies_identity_before_exporting_plan(self):
+        account={**ACCOUNT,'provider':'codex','key':'codex_a','source_home':'/unused'}
+        rpc=MagicMock()
+        def call(method,*args):
+            return {'initialize':{},'account/read':{'account':{
+                'type':'chatgpt','email':account['email'],'planType':'plus','secret':'DO-NOT-EXPORT'}},
+                'account/rateLimits/read':{'rateLimits':{'planType':'plus','primary':{
+                    'usedPercent':35,'windowDurationMins':10080}}}}[method]
+        rpc.call.side_effect=call
+        with patch('token_tv.sources.Path.is_file',return_value=True), patch('token_tv.sources.RPC',return_value=rpc):
+            row=fetch_account(account)
+        self.assertEqual(row['status'],'ok')
+        self.assertEqual(row['subscription'],metadata('plus'))
+        self.assertEqual(row['windows'][0]['used_percent'],35)
+        self.assertNotIn('DO-NOT-EXPORT',json.dumps(row))
+        self.assertNotIn(account['email'],json.dumps(row))
+        rpc.close.assert_called_once()
+        rpc.reset_mock()
+        def mismatch(method,*args):
+            if method=='account/read':return {'account':{'type':'chatgpt','email':'wrong@example.invalid','planType':'pro'}}
+            if method=='account/rateLimits/read':raise AssertionError('Quota requested before identity check')
+            return {}
+        rpc.call.side_effect=mismatch
+        with patch('token_tv.sources.Path.is_file',return_value=True), patch('token_tv.sources.RPC',return_value=rpc):
+            row=fetch_account(account)
+        self.assertEqual(row['status'],'identity_mismatch')
+        self.assertNotIn('subscription',row)
+        rpc.close.assert_called_once()
 
 
 class PlanHistoryTests(unittest.TestCase):
@@ -124,6 +162,27 @@ class PlanHistoryTests(unittest.TestCase):
         self.assertEqual(self.query()['reset_events'],[])
         self.assertEqual(len(self.query()['plan_events']),1)
         self.assertIsNone(self.query()['range_used_pp'])
+
+    def test_codex_accounts_keep_independent_plans_and_changes(self):
+        accounts=[{**ACCOUNT,'provider':'codex','key':'codex_a','alias':'CODEX A'},
+                  {**ACCOUNT,'provider':'codex','key':'codex_b','alias':'CODEX B','email':'b@example.invalid'}]
+        ledger=UsageHistory(self.path,accounts)
+        for offset,values in [(0,[(80,'plus'),(10,'pro')]),(300,[(20,'pro'),(12,'pro')]),
+                              (600,[(22,'pro'),(16,'pro')])]:
+            observed=self.base+offset
+            rows={a['key']:{'status':'ok','identity_verified':True,'fetched_at':observed,
+                'subscription':metadata(plan),'windows':[{'label':'WEEK','used_percent':value,'resets_at':self.reset}]}
+                for a,(value,plan) in zip(accounts,values)}
+            with patch('token_tv.history.time.time',return_value=observed):ledger.record({'accounts':rows})
+        for mode in ('day','hour'):
+            for key,total,changes in [('codex_a',2,1),('codex_b',6,0)]:
+                stamp=lambda value:datetime.fromtimestamp(value,KST).isoformat(timespec='minutes')[:16]
+                result=ledger.query(key,day_at(self.base),day_at(self.base+3600)) if mode=='day' else ledger.query(key,stamp(self.base),stamp(self.base+3600),'hour')
+                self.assertEqual(result['range_used_pp'],total)
+                self.assertEqual(len(result['plan_events']),changes)
+                if changes:
+                    self.assertEqual(result['plan_events'][0]['from'],metadata('plus'))
+                    self.assertEqual(result['plan_events'][0]['to'],metadata('pro'))
 
     def test_migration_preserves_legacy_observations_and_totals(self):
         self.record(0,10,None)

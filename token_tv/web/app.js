@@ -187,7 +187,7 @@ function providerCard(provider, accounts) {
  if (checked) {const d = new Date(checked * 1000); when = el('time', d.toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit'}), 'stat-v'); when.dateTime = d.toISOString(); when.title = d.toLocaleString('en-GB')}
  const foot = el('div', undefined, 'card-foot');
  foot.append(stat('Account', a.alias || '—'), stat('Window', primary ? period(primary) : '—'), stat('Source', a.source === 'mini' ? 'This computer' : a.source === 'codexbar' ? 'CodexBar' : a.source ? 'Linked snapshot' : '—'), stat(stale ? 'Last good' : 'Checked', when), stat('Status', el('span', offline ? 'OFFLINE · Previous value' : STATUS[a.status] || 'Unknown', 'row-status stat-v'), 'stat-status'));
- if (provider === 'claude') foot.prepend(stat('Plan', a.subscription?.label || '요금제 미확인'));
+ if (['claude', 'codex'].includes(provider)) foot.prepend(stat('Plan', a.subscription?.label || '요금제 미확인'));
  card.append(foot);
  if (!DEMO && a.login_available) {
   const connection = el('div', undefined, 'account-connect');
