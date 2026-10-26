@@ -791,6 +791,8 @@ h1{margin:0;font:600 48px/1.04 var(--font-display);letter-spacing:-.03em;color:v
 .history-handle-start{left:-10px}.history-handle-end{right:-10px}
 .history-hint{margin:12px 0 8px;color:var(--ink-2);font-size:11px}
 .history-message{margin:8px 0 0;color:var(--ink-2);font-size:12px}
+.history-plan-note{margin:8px 0 16px;color:var(--ink-2);font:12px/1.7 system-ui,sans-serif;max-width:100ch}
+.history-plan-key{width:10px;height:10px;display:inline-block;border:2px solid var(--ink-2);vertical-align:middle}
 .history-details{margin-top:16px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink-2);font-size:12px}
 .history-details summary{cursor:pointer;color:var(--ink)}
 .history-table-wrap{overflow:auto;max-height:320px;margin-top:12px}

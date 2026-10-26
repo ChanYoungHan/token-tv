@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 
 from token_tv.usage import normalize_claude, normalize_codex, normalize_codexbar, normalize_grok, timestamp, window
 from token_tv.display import STYLES
+from token_tv.subscription import claude_subscription, codex_subscription
 
 CODEXBAR_SOURCES = {"auto", "web", "cli", "oauth", "api"}
 AUTH_WORDS = ("auth", "login", "sign in", "token")
@@ -247,7 +248,8 @@ def codex_payload(account):
             raise SourceError("auth_required")
         if not identity_matches(account["email"], identity.get("email")):
             raise SourceError("identity_mismatch")
-        return rpc.call("account/rateLimits/read")
+        data = rpc.call("account/rateLimits/read")
+        return dict(data, subscription=codex_subscription(identity, data.get('rateLimits')))
     finally:
         rpc.close()
 
@@ -422,9 +424,12 @@ def fetch_account(account, before_refresh=None):
             if not identity_matches(account["email"], email_from_profile(profile)):
                 raise SourceError("identity_mismatch")
             row["windows"] = normalize_claude(data)
+            row["subscription"] = claude_subscription(profile)
             row["identity_verified"] = True
         elif account["provider"] == "codex":
-            row["windows"] = normalize_codex(codex_payload(account))
+            data = codex_payload(account)
+            row["windows"] = normalize_codex(data)
+            row["subscription"] = data['subscription']
             row["identity_verified"] = True
         else:
             if not identity_matches(account["email"], grok_identity(account)):
